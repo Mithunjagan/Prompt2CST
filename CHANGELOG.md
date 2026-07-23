@@ -7,6 +7,9 @@ All notable Prompt2CST changes are documented here.
 - Added a comprehensive GitHub-ready README covering architecture, runtime
   flows, setup, outputs, tools, security, troubleshooting and every maintained
   repository file.
+- Added a centered project hero, sanitized product screenshot, quick product
+  journey, grouped component architecture, application state machine,
+  trace-flow diagram, and realistic preview/build/denial Activity logs.
 - Replaced the hard-coded `D:\Prompt2CST\outputs` default with a portable
   checkout-local output directory and a per-user installed fallback.
 - Made setup stop on failed environment creation, installation or tests.

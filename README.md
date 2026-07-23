@@ -1,30 +1,102 @@
-# Prompt2CST
+<p align="center">
+  <img src="src/prompt2cst/assets/prompt2cst.svg" width="112" alt="Prompt2CST logo">
+</p>
 
-### Natural-language antenna intent to reviewable CST Studio Suite geometry, with a typed local tool boundary and explicit approval before every write
+<h1 align="center">Prompt2CST</h1>
 
-[![Version](https://img.shields.io/badge/version-0.5.0b1-6c63ff)](CHANGELOG.md)
-[![Python](https://img.shields.io/badge/Python-3.11-3776ab?logo=python&logoColor=white)](pyproject.toml)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?logo=windows)](#platform-support)
-[![Tests](https://img.shields.io/badge/tests-39%20passing-22c55e)](#verification)
-[![License](https://img.shields.io/badge/license-MIT-16a34a)](LICENSE)
+<p align="center">
+  <strong>Describe an antenna. Inspect the engineering. Approve the exact CST write.</strong>
+</p>
+
+<p align="center">
+  A safety-first RF design workspace that turns natural-language intent into
+  typed, reviewable CST Studio Suite 2026 geometry.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Mithunjagan/Prompt2CST/actions/workflows/tests.yml"><img src="https://github.com/Mithunjagan/Prompt2CST/actions/workflows/tests.yml/badge.svg" alt="Windows tests"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.5.0b1-6c63ff" alt="Version 0.5.0 beta 1"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.11-3776ab?logo=python&amp;logoColor=white" alt="Python 3.11"></a>
+  <a href="#platform-support"><img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?logo=windows" alt="Windows 10 and 11"></a>
+  <a href="#verification"><img src="https://img.shields.io/badge/tests-39%20passing-22c55e" alt="39 tests passing"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-16a34a" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start"><strong>Quick start</strong></a>
+  ·
+  <a href="#the-12-mcp-tools"><strong>Explore the tools</strong></a>
+  ·
+  <a href="#architecture"><strong>See the architecture</strong></a>
+  ·
+  <a href="#runtime-flow-logs"><strong>Read the trace</strong></a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/prompt2cst-workspace.png" width="100%" alt="Prompt2CST RF Design Studio workspace">
+</p>
+
+<p align="center">
+  <sub>Qt Quick desktop workspace at 125% Windows scaling. API key intentionally hidden.</sub>
+</p>
 
 Prompt2CST is a Windows RF-design desktop application and local Model Context
 Protocol (MCP) server. It connects a tool-capable OpenRouter model to 12 typed
 tools that calculate, validate, preview, and—only after visible user
 approval—write supported antenna geometry into CST Studio Suite 2026.
 
-The application is designed for traceable geometry generation, learning, and
+| 🧠 Intent becomes engineering | 🛡️ Writes remain controlled | 🔎 Every step stays inspectable |
+|---|---|---|
+| Natural language is routed into dedicated calculations and strict geometry schemas. | Every write is paired with a preview, visible approval sheet, and server-side confirmation check. | Assistant output, MCP activity, proposed arguments, warnings, and saved project path remain reviewable. |
+
+<p align="center">
+  <strong>12 typed tools</strong> ·
+  <strong>5 protected write tools</strong> ·
+  <strong>4 antenna families</strong> ·
+  <strong>39 tests</strong> ·
+  <strong>0 solver calls</strong>
+</p>
+
+The application is built for traceable geometry generation, learning, and
 prototyping. It does **not** run the CST solver, extract results, optimize an
 antenna, or claim electromagnetic performance.
 
+> [!IMPORTANT]
 > **Beta safety notice:** Always inspect geometry, units, materials, ports,
 > boundaries, monitors, mesh settings, and project history inside CST before
 > simulation. Prompt2CST generates first-pass models; it does not replace RF
 > engineering review.
 
+## The experience in one flow
+
+```mermaid
+flowchart LR
+    A["Describe RF intent"] --> B["Choose a supported family"]
+    B --> C["Generate typed preview"]
+    C --> D["Review dimensions + warnings"]
+    D --> E{"Build requested?"}
+    E -->|"No"| F["Refine the request"]
+    F --> C
+    E -->|"Yes"| G["Inspect exact write proposal"]
+    G --> H{"Approve?"}
+    H -->|"Deny"| I["No CST write"]
+    H -->|"Approve"| J["Create local .cst project"]
+    J --> K["Inspect in CST before simulation"]
+
+    classDef intent fill:#123047,stroke:#55d7ff,color:#f4f9ff;
+    classDef review fill:#242348,stroke:#9e8cff,color:#f4f9ff;
+    classDef safe fill:#123a35,stroke:#55e6a5,color:#f4f9ff;
+    classDef stop fill:#3d2029,stroke:#ff7b8a,color:#f4f9ff;
+    class A,B,C intent;
+    class D,E,G,H review;
+    class J,K safe;
+    class F,I stop;
+```
+
 ## Contents
 
 - [What the application can do](#what-the-application-can-do)
+- [Why Prompt2CST feels different](#why-prompt2cst-feels-different)
 - [What it cannot do](#what-it-cannot-do)
 - [Platform support](#platform-support)
 - [Prerequisites](#prerequisites)
@@ -36,7 +108,9 @@ antenna, or claim electromagnetic performance.
 - [Supported antenna families](#supported-antenna-families)
 - [The 12 MCP tools](#the-12-mcp-tools)
 - [Architecture](#architecture)
+- [Application state machine](#application-state-machine)
 - [Complete logic flow](#complete-logic-flow)
+- [Runtime flow logs](#runtime-flow-logs)
 - [Safety model](#safety-model)
 - [Technology stack](#technology-stack)
 - [Configuration](#configuration)
@@ -65,6 +139,18 @@ antenna, or claim electromagnetic performance.
   accidental overwrite unless `overwrite=true` was explicitly proposed and
   approved.
 - Provide a standalone stdio MCP server for compatible external clients.
+
+## Why Prompt2CST feels different
+
+| Generic LLM automation risk | Prompt2CST response |
+|---|---|
+| Model receives a general code or shell tool | Model receives a fixed catalog of typed RF/CST tools |
+| Dimensions can be invented in prose | Dedicated calculations and strict schemas validate inputs |
+| A write can happen inside an opaque agent step | Every write is mapped to a non-writing preview |
+| Confirmation is only a prompt instruction | Desktop approval and server-side `confirm` checks are independent |
+| Generated macros are difficult to trace | Arguments, preview, tool activity, History List blocks, and project path remain inspectable |
+| Existing projects may be overwritten | Overwrite is false by default and must appear in the approved proposal |
+| The assistant can imply simulation success | Solver execution is unavailable and results report `solver_run=false` |
 
 ## What it cannot do
 
@@ -459,28 +545,63 @@ callback returns true.
 ### Component architecture
 
 ```mermaid
-flowchart LR
-    User["User"] --> QML["Qt Quick / QML desktop"]
-    QML --> Controller["Prompt2CSTController"]
-    Controller --> Worker["Qt worker thread"]
-    Worker --> Agent["OpenRouterAgent"]
-    Agent --> OR["OpenRouter Chat Completions API"]
-    Agent --> Client["Local MCP stdio client"]
-    Client --> Server["FastMCP server subprocess"]
-    Server --> Catalog["Capability catalog"]
-    Server --> Design["Typed design calculations"]
-    Server --> Schema["Pydantic validation"]
-    Design --> Macros["CST History List generator"]
+flowchart TB
+    User(["RF designer"])
+
+    subgraph Desktop["Desktop experience · one local process"]
+        QML["Qt Quick / QML workspace"]
+        Controller["Prompt2CSTController"]
+        Worker["Background Qt worker"]
+        Approval{"Native approval sheet"}
+        Review["Assistant + Activity review"]
+    end
+
+    subgraph Intelligence["Model orchestration"]
+        Agent["OpenRouterAgent"]
+        OR["OpenRouter Chat Completions API"]
+    end
+
+    subgraph LocalSafety["Local safety boundary · stdio only"]
+        Client["MCP client session"]
+        Server["FastMCP server · 12 typed tools"]
+        Catalog["Capability catalog"]
+        Design["RF calculations"]
+        Schema["Strict Pydantic schemas"]
+        Macros["Deterministic CST history"]
+    end
+
+    subgraph CSTSide["CST integration · Windows only"]
+        Bridge["CSTBridge"]
+        COM["CSTStudio.Application.2026 COM"]
+        Project["Local .cst project"]
+    end
+
+    User --> QML
+    QML --> Controller --> Worker --> Agent
+    Agent <--> OR
+    Agent <--> Client
+    Client <--> Server
+    Server --> Catalog
+    Server --> Design
+    Server --> Schema
+    Design --> Macros
     Schema --> Macros
-    Agent --> Approval["Native approval request"]
-    Approval --> QML
-    QML -->|"Approve"| Agent
-    QML -->|"Deny"| Agent
-    Agent -->|"confirm=true after approval"| Server
-    Server --> Bridge["CSTBridge"]
-    Bridge --> COM["CSTStudio.Application.2026 COM"]
-    COM --> CST["CST project"]
-    CST --> Output["Configured outputs/*.cst"]
+    Agent -->|"write proposed"| Approval
+    Approval -->|"approve or deny"| Agent
+    Agent --> Review --> QML
+    Server -->|"confirm=true only after approval"| Bridge
+    Macros --> Bridge
+    Bridge --> COM --> Project
+    Project --> Review
+
+    classDef ui fill:#10283d,stroke:#55d7ff,color:#f4f9ff;
+    classDef ai fill:#252044,stroke:#9e8cff,color:#f4f9ff;
+    classDef safe fill:#12352f,stroke:#55e6a5,color:#f4f9ff;
+    classDef write fill:#3b2918,stroke:#ffb86b,color:#f4f9ff;
+    class QML,Controller,Worker,Review ui;
+    class Agent,OR ai;
+    class Client,Server,Catalog,Design,Schema,Macros safe;
+    class Approval,Bridge,COM,Project write;
 ```
 
 ### Layer responsibilities
@@ -502,6 +623,55 @@ The desktop application launches the MCP server as a local child process using
 the same Python interpreter. It does not expose an HTTP server or listen on a
 network port.
 
+## Application state machine
+
+The UI uses a small set of observable states driven by `busy`, status text,
+worker lifetime, and the optional pending approval request.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Ready
+
+    Ready --> RefreshingModels: Refresh model list
+    RefreshingModels --> Ready: Models loaded
+    RefreshingModels --> Failed: OpenRouter/model error
+
+    Ready --> Previewing: Preview design
+    Previewing --> ReviewReady: Assistant response
+    Previewing --> Failed: Validation/API/MCP error
+
+    Ready --> PreparingBuild: Build in CST
+    PreparingBuild --> AwaitingApproval: Write tool proposed
+    AwaitingApproval --> PreparingBuild: Deny / return user_denied
+    AwaitingApproval --> WritingCST: Approve / inject confirm=true
+    WritingCST --> PreparingBuild: Tool result returned
+    PreparingBuild --> Completed: Final assistant response
+    PreparingBuild --> Failed: Validation/API/MCP/COM error
+    WritingCST --> Failed: COM or filesystem error
+
+    ReviewReady --> Ready: Clear or start another request
+    Completed --> Ready: Clear or start another request
+    Failed --> Ready: Correct input and retry
+
+    AwaitingApproval --> Closing: Window closes
+    Closing --> [*]: Pending write is denied
+    Ready --> [*]: Window closes
+```
+
+### Status-to-state map
+
+| Visible status | Internal meaning | Permitted next action |
+|---|---|---|
+| `Ready` | No worker is active | Refresh, preview, or build |
+| `Refreshing tool-capable models…` | OpenRouter model metadata is loading | Wait or inspect an error |
+| `Generating safe preview…` | Preview-mode agent loop is active | Wait for Assistant/Activity |
+| `Preparing CST build…` | Build-mode agent loop is active | Wait for preview/tool proposal |
+| `Review required before CST write` | Worker is blocked on the approval sheet | Approve or deny |
+| `CST build approved…` | Approval returned true; write may proceed | Wait for CST/tool result |
+| `CST build denied · finalizing response…` | Write was rejected | Wait for the model’s final response |
+| `Completed` | Agent loop returned a readable response | Inspect, copy, clear, or start again |
+| `Failed` | Error details were placed in Activity | Correct the cause and retry |
+
 ## Complete logic flow
 
 ### Preview flow
@@ -518,7 +688,7 @@ sequenceDiagram
     U->>UI: Enter key, model, family, requirements
     U->>UI: Preview design
     UI->>C: runAgent(..., mode="preview")
-    C->>C: Compose "Preview only; do not build"
+    C->>C: Compose preview-only safety instruction
     C->>A: Start worker request
     A->>M: Start stdio server and list 12 tools
     A->>O: Prompt + typed tool schemas
@@ -551,7 +721,7 @@ sequenceDiagram
     alt User denies
         U->>UI: Deny build
         UI-->>A: approved=false
-        A-->>UI: user_denied; write_performed=false
+        A-->>UI: user_denied with write_performed=false
     else User approves
         U->>UI: Approve CST build
         UI-->>A: approved=true
@@ -577,6 +747,109 @@ sequenceDiagram
 7. Denial returns `write_performed=false`; the build tool is never called.
 8. COM and filesystem exceptions appear in the Activity tab and error toast.
 9. Existing projects raise an error unless overwrite was proposed and approved.
+
+## Runtime flow logs
+
+The **Activity** tab is a compact execution trace, not a hidden debug console.
+Every request starts with the selected model, family, and mode, then appends
+worker and agent events in execution order.
+
+### Log pipeline
+
+```mermaid
+flowchart LR
+    Header["Session header<br/>model · family · mode"]
+    Worker["GUI worker started"]
+    MCPStart["Local MCP server started"]
+    Discovery["12 tools discovered"]
+    ModelStep["OpenRouter step n / 8"]
+    Tool{"Tool requested"}
+    Preview["Preview tool call"]
+    Gate{"Write tool?"}
+    Approval["Approval sheet"]
+    Denied["user_denied<br/>write_performed=false"]
+    Write["Confirmed build tool"]
+    Result["Assistant response<br/>or exact error"]
+
+    Header --> Worker --> MCPStart --> Discovery --> ModelStep --> Tool
+    Tool -->|"preview/status/catalog"| Preview --> ModelStep
+    Tool -->|"build"| Gate --> Approval
+    Approval -->|"deny"| Denied --> ModelStep
+    Approval -->|"approve"| Write --> ModelStep
+    ModelStep -->|"no more tool calls"| Result
+
+    classDef trace fill:#10283d,stroke:#55d7ff,color:#f4f9ff;
+    classDef gate fill:#252044,stroke:#9e8cff,color:#f4f9ff;
+    classDef denied fill:#3d2029,stroke:#ff7b8a,color:#f4f9ff;
+    classDef write fill:#12352f,stroke:#55e6a5,color:#f4f9ff;
+    class Header,Worker,MCPStart,Discovery,ModelStep,Tool,Preview,Result trace;
+    class Gate,Approval gate;
+    class Denied denied;
+    class Write write;
+```
+
+### Example: preview trace
+
+```text
+Model: cohere/north-mini-code:free
+Family: wire_monopole
+Mode: preview
+
+[agent] GUI worker started
+[agent] Starting local Prompt2CST MCP server
+[agent] MCP initialized; discovering tools
+[agent] Discovered 12 MCP tools
+[agent] OpenRouter request 1/8 using cohere/north-mini-code:free
+[agent] Calling MCP tool: preview_wire_monopole
+[agent] OpenRouter request 2/8 using cohere/north-mini-code:free
+```
+
+### Example: approved build trace
+
+```text
+Model: <selected-tool-capable-model>
+Family: center_fed_dipole
+Mode: build
+
+[agent] GUI worker started
+[agent] Starting local Prompt2CST MCP server
+[agent] MCP initialized; discovering tools
+[agent] Discovered 12 MCP tools
+[agent] OpenRouter request 1/8 using <selected-tool-capable-model>
+[agent] Previewing before write: preview_center_fed_dipole
+
+UI status: Review required before CST write
+User action: Approve CST build
+UI status: CST build approved…
+
+[agent] Calling MCP tool: build_center_fed_dipole
+[agent] OpenRouter request 2/8 using <selected-tool-capable-model>
+```
+
+### Example: denied write
+
+```text
+[agent] Previewing before write: preview_parametric_antenna
+UI status: Review required before CST write
+User action: Deny build
+[agent] User denied CST write: build_parametric_antenna
+Tool result: {"status":"user_denied","write_performed":false}
+```
+
+### Reading a failure
+
+When a request fails, the Assistant tab shows a short failure message and the
+Activity tab adds an `ERROR` block with the flattened underlying exception.
+Typical causes include:
+
+- OpenRouter authentication or rate-limit errors;
+- model responses with invalid tool arguments;
+- MCP startup or call timeouts;
+- typed validation errors;
+- CST COM registration/license failures;
+- output-path or overwrite errors.
+
+No API key is written into the Activity log by Prompt2CST.
 
 ## Safety model
 
@@ -923,7 +1196,8 @@ projects.
 | Path | Purpose |
 |---|---|
 | `docs/architecture.md` | Short architecture and safety-boundary companion |
-| `docs/screenshots/README.md` | Safe instructions for capturing a public screenshot without credentials |
+| `docs/screenshots/README.md` | Safe instructions for maintaining public screenshots without credentials |
+| `docs/screenshots/prompt2cst-workspace.png` | Sanitized GitHub hero screenshot of the complete desktop workspace |
 
 ### Python package
 
