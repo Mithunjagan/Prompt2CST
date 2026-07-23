@@ -19,7 +19,7 @@
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.11-3776ab?logo=python&amp;logoColor=white" alt="Python 3.11"></a>
   <a href="#platform-support"><img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?logo=windows" alt="Windows 10 and 11"></a>
   <a href="#verification"><img src="https://img.shields.io/badge/tests-39%20passing-22c55e" alt="39 tests passing"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-16a34a" alt="MIT license"></a>
+  
 </p>
 
 <p align="center">
