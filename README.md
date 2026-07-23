@@ -547,51 +547,37 @@ callback returns true.
 ```mermaid
 flowchart TB
     User(["RF designer"])
+    QML["Qt Quick / QML workspace<br/>desktop process"]
+    Controller["Prompt2CSTController"]
+    Worker["Background Qt worker"]
+    Agent["OpenRouterAgent<br/>tool loop + safety policy"]
+    OR["OpenRouter<br/>Chat Completions API"]
+    Approval{"Native approval sheet"}
+    Review["Assistant + Activity review"]
+    Client["MCP client<br/>local stdio only"]
+    Server["FastMCP server<br/>12 typed tools"]
+    Catalog["Capability catalog"]
+    Design["RF calculations"]
+    Schema["Strict Pydantic schemas"]
+    Macros["Deterministic CST history"]
+    Bridge["CSTBridge<br/>Windows COM boundary"]
+    COM["CSTStudio.Application.2026"]
+    Project["Local .cst project<br/>solver not started"]
 
-    subgraph Desktop["Desktop experience · one local process"]
-        QML["Qt Quick / QML workspace"]
-        Controller["Prompt2CSTController"]
-        Worker["Background Qt worker"]
-        Approval{"Native approval sheet"}
-        Review["Assistant + Activity review"]
-    end
-
-    subgraph Intelligence["Model orchestration"]
-        Agent["OpenRouterAgent"]
-        OR["OpenRouter Chat Completions API"]
-    end
-
-    subgraph LocalSafety["Local safety boundary · stdio only"]
-        Client["MCP client session"]
-        Server["FastMCP server · 12 typed tools"]
-        Catalog["Capability catalog"]
-        Design["RF calculations"]
-        Schema["Strict Pydantic schemas"]
-        Macros["Deterministic CST history"]
-    end
-
-    subgraph CSTSide["CST integration · Windows only"]
-        Bridge["CSTBridge"]
-        COM["CSTStudio.Application.2026 COM"]
-        Project["Local .cst project"]
-    end
-
-    User --> QML
-    QML --> Controller --> Worker --> Agent
+    User --> QML --> Controller --> Worker --> Agent
     Agent <--> OR
-    Agent <--> Client
-    Client <--> Server
+    Agent <--> Client <--> Server
+    Agent -->|"write proposed"| Approval
+    Approval -->|"approve or deny"| Agent
+    Agent --> Review --> QML
+
     Server --> Catalog
     Server --> Design
     Server --> Schema
     Design --> Macros
     Schema --> Macros
-    Agent -->|"write proposed"| Approval
-    Approval -->|"approve or deny"| Agent
-    Agent --> Review --> QML
     Server -->|"confirm=true only after approval"| Bridge
-    Macros --> Bridge
-    Bridge --> COM --> Project
+    Macros --> Bridge --> COM --> Project
     Project --> Review
 
     classDef ui fill:#10283d,stroke:#55d7ff,color:#f4f9ff;
