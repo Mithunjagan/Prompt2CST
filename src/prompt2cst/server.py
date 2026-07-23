@@ -1,0 +1,502 @@
+from __future__ import annotations
+
+import logging
+import sys
+
+from mcp.server.fastmcp import FastMCP
+
+from .catalog import capability_catalog
+from .cst_bridge import CSTBridge
+from .cst_macros import (
+    complete_parametric_preview,
+    complete_patch_preview,
+    complete_wire_monopole_preview,
+    dipole_parametric_spec,
+    test_brick_history,
+)
+from .design import (
+    DipoleInputs,
+    MonopoleInputs,
+    PatchInputs,
+    calculate_center_fed_dipole,
+    calculate_rectangular_patch,
+    calculate_wire_monopole,
+)
+from .parametric import ParametricAntennaSpec
+
+
+SERVER_INSTRUCTIONS = """
+Prompt2CST exposes safe, typed tools for CST Studio Suite 2026. Always call a
+preview or status tool before a build tool. Never call a build tool unless the
+user explicitly approved creating or overwriting a CST project; pass
+confirm=true only after that approval. Do not claim a solver ran when the tool
+reports solver_run=false. Use only tools relevant to the requested antenna.
+Never call preview_test_brick as a substitute for a different antenna type.
+Call antenna_catalog when the requested family or required CST capability is
+unclear. Prefer a dedicated antenna-family tool. Use the custom parametric
+tools only for designs that can be represented with validated bricks,
+axis-aligned cylinders, materials and discrete ports. Never invent support for
+geometry, ports, solvers or result extraction that the catalog marks missing.
+""".strip()
+
+mcp = FastMCP("Prompt2CST", instructions=SERVER_INSTRUCTIONS)
+
+
+def _patch_inputs(
+    frequency_ghz: float,
+    relative_permittivity: float,
+    substrate_height_mm: float,
+    loss_tangent: float,
+    conductor_thickness_mm: float,
+    feed_impedance_ohm: float,
+    estimated_edge_resistance_ohm: float,
+    inset_gap_mm: float,
+) -> PatchInputs:
+    return PatchInputs(
+        frequency_ghz=frequency_ghz,
+        relative_permittivity=relative_permittivity,
+        substrate_height_mm=substrate_height_mm,
+        loss_tangent=loss_tangent,
+        conductor_thickness_mm=conductor_thickness_mm,
+        feed_impedance_ohm=feed_impedance_ohm,
+        estimated_edge_resistance_ohm=estimated_edge_resistance_ohm,
+        inset_gap_mm=inset_gap_mm,
+    )
+
+
+@mcp.tool()
+def cst_status(test_connection: bool = False) -> dict:
+    """Check CST 2026 COM registration; optionally perform a live connection."""
+
+    return CSTBridge().status(test_connection=test_connection)
+
+
+@mcp.tool()
+def antenna_catalog() -> dict:
+    """List supported antenna families, safe primitives and limitations."""
+
+    return capability_catalog()
+
+
+@mcp.tool()
+def preview_test_brick() -> dict:
+    """Return the known-good CST history command for the harmless test brick."""
+
+    return {
+        "write_performed": False,
+        "history_command": test_brick_history(),
+        "dimensions_mm": {"x": 10.0, "y": 10.0, "z": 1.0},
+        "material": "PEC",
+    }
+
+
+@mcp.tool()
+def build_test_brick(
+    project_name: str = "mcp_test_brick",
+    confirm: bool = False,
+    overwrite: bool = False,
+) -> dict:
+    """Create the known-good PEC brick in a new CST project after confirmation."""
+
+    if not confirm:
+        return {
+            "status": "confirmation_required",
+            "write_performed": False,
+            "message": (
+                "Preview the brick and obtain explicit user approval, then call "
+                "again with confirm=true."
+            ),
+        }
+    return CSTBridge().build_test_brick(
+        project_name=project_name,
+        overwrite=overwrite,
+    )
+
+
+@mcp.tool()
+def preview_rectangular_patch(
+    frequency_ghz: float = 2.45,
+    relative_permittivity: float = 4.3,
+    substrate_height_mm: float = 1.6,
+    loss_tangent: float = 0.02,
+    conductor_thickness_mm: float = 0.035,
+    feed_impedance_ohm: float = 50.0,
+    estimated_edge_resistance_ohm: float = 300.0,
+    inset_gap_mm: float = 0.5,
+    include_history_commands: bool = False,
+) -> dict:
+    """Calculate and preview a first-pass inset-fed rectangular patch."""
+
+    design = calculate_rectangular_patch(
+        _patch_inputs(
+            frequency_ghz,
+            relative_permittivity,
+            substrate_height_mm,
+            loss_tangent,
+            conductor_thickness_mm,
+            feed_impedance_ohm,
+            estimated_edge_resistance_ohm,
+            inset_gap_mm,
+        )
+    )
+    result = {
+        "write_performed": False,
+        "design": design.to_dict(),
+        "assumptions": [
+            "Transmission-line rectangular-patch equations are used.",
+            "The ground/substrate margin is three substrate heights per side.",
+            "Inset depth uses an estimated edge resistance and needs EM tuning.",
+            "PEC approximates the metal in v0.1.",
+        ],
+    }
+    if include_history_commands:
+        result["history_commands"] = complete_patch_preview(design)
+    return result
+
+
+@mcp.tool()
+def build_rectangular_patch(
+    project_name: str,
+    frequency_ghz: float = 2.45,
+    relative_permittivity: float = 4.3,
+    substrate_height_mm: float = 1.6,
+    loss_tangent: float = 0.02,
+    conductor_thickness_mm: float = 0.035,
+    feed_impedance_ohm: float = 50.0,
+    estimated_edge_resistance_ohm: float = 300.0,
+    inset_gap_mm: float = 0.5,
+    include_boundary_setup: bool = True,
+    confirm: bool = False,
+    overwrite: bool = False,
+) -> dict:
+    """Build first-pass patch geometry in CST after explicit confirmation."""
+
+    design = calculate_rectangular_patch(
+        _patch_inputs(
+            frequency_ghz,
+            relative_permittivity,
+            substrate_height_mm,
+            loss_tangent,
+            conductor_thickness_mm,
+            feed_impedance_ohm,
+            estimated_edge_resistance_ohm,
+            inset_gap_mm,
+        )
+    )
+    if not confirm:
+        return {
+            "status": "confirmation_required",
+            "write_performed": False,
+            "design": design.to_dict(),
+            "message": (
+                "Show this design to the user and obtain explicit approval, "
+                "then call again with confirm=true."
+            ),
+        }
+
+    return CSTBridge().build_rectangular_patch(
+        design=design,
+        project_name=project_name,
+        overwrite=overwrite,
+        include_boundary_setup=include_boundary_setup,
+    )
+
+
+def _monopole_inputs(
+    frequency_ghz: float,
+    wire_length_mm: float,
+    wire_radius_mm: float,
+    ground_size_mm: float,
+    ground_thickness_mm: float,
+    feed_gap_mm: float,
+    port_impedance_ohm: float,
+    sweep_start_ghz: float,
+    sweep_stop_ghz: float,
+) -> MonopoleInputs:
+    return MonopoleInputs(
+        frequency_ghz=frequency_ghz,
+        wire_length_mm=wire_length_mm,
+        wire_radius_mm=wire_radius_mm,
+        ground_size_mm=ground_size_mm,
+        ground_thickness_mm=ground_thickness_mm,
+        feed_gap_mm=feed_gap_mm,
+        port_impedance_ohm=port_impedance_ohm,
+        sweep_start_ghz=sweep_start_ghz,
+        sweep_stop_ghz=sweep_stop_ghz,
+    )
+
+
+@mcp.tool()
+def preview_wire_monopole(
+    frequency_ghz: float = 2.45,
+    wire_length_mm: float = 30.6,
+    wire_radius_mm: float = 0.612,
+    ground_size_mm: float = 61.2,
+    ground_thickness_mm: float = 0.5,
+    feed_gap_mm: float = 1.5,
+    port_impedance_ohm: float = 50.0,
+    sweep_start_ghz: float = 2.0,
+    sweep_stop_ghz: float = 3.0,
+    include_history_commands: bool = False,
+) -> dict:
+    """Preview a vertical cylindrical wire monopole, ground and feed port."""
+
+    design = calculate_wire_monopole(
+        _monopole_inputs(
+            frequency_ghz,
+            wire_length_mm,
+            wire_radius_mm,
+            ground_size_mm,
+            ground_thickness_mm,
+            feed_gap_mm,
+            port_impedance_ohm,
+            sweep_start_ghz,
+            sweep_stop_ghz,
+        )
+    )
+    warnings = []
+    if wire_radius_mm / wire_length_mm >= 0.05:
+        warnings.append(
+            "The requested radius is large relative to the monopole length; "
+            "verify that 6.12 mm was not intended to be 0.612 mm."
+        )
+    result = {
+        "write_performed": False,
+        "design": design.to_dict(),
+        "port": {
+            "type": "discrete",
+            "impedance_ohm": port_impedance_ohm,
+            "p1_mm": [0.0, 0.0, 0.0],
+            "p2_mm": [0.0, 0.0, feed_gap_mm],
+        },
+        "boundaries": "expanded open in all directions",
+        "farfield_monitor_ghz": frequency_ghz,
+        "solver_run": False,
+        "warnings": warnings,
+    }
+    if include_history_commands:
+        result["history_commands"] = complete_wire_monopole_preview(design)
+    return result
+
+
+@mcp.tool()
+def build_wire_monopole(
+    project_name: str,
+    frequency_ghz: float = 2.45,
+    wire_length_mm: float = 30.6,
+    wire_radius_mm: float = 0.612,
+    ground_size_mm: float = 61.2,
+    ground_thickness_mm: float = 0.5,
+    feed_gap_mm: float = 1.5,
+    port_impedance_ohm: float = 50.0,
+    sweep_start_ghz: float = 2.0,
+    sweep_stop_ghz: float = 3.0,
+    include_port: bool = True,
+    include_boundary_setup: bool = True,
+    include_farfield_monitor: bool = True,
+    confirm: bool = False,
+    overwrite: bool = False,
+) -> dict:
+    """Build beta wire-monopole geometry and setup after explicit approval."""
+
+    design = calculate_wire_monopole(
+        _monopole_inputs(
+            frequency_ghz,
+            wire_length_mm,
+            wire_radius_mm,
+            ground_size_mm,
+            ground_thickness_mm,
+            feed_gap_mm,
+            port_impedance_ohm,
+            sweep_start_ghz,
+            sweep_stop_ghz,
+        )
+    )
+    if not confirm:
+        return {
+            "status": "confirmation_required",
+            "write_performed": False,
+            "design": design.to_dict(),
+            "message": (
+                "Show the wire-monopole preview to the user and obtain "
+                "explicit approval, then call again with confirm=true."
+            ),
+        }
+
+    return CSTBridge().build_wire_monopole(
+        design=design,
+        project_name=project_name,
+        overwrite=overwrite,
+        include_port=include_port,
+        include_boundary_setup=include_boundary_setup,
+        include_farfield_monitor=include_farfield_monitor,
+    )
+
+
+def _dipole_inputs(
+    frequency_ghz: float,
+    total_conductor_length_mm: float,
+    wire_radius_mm: float,
+    feed_gap_mm: float,
+    port_impedance_ohm: float,
+    sweep_start_ghz: float,
+    sweep_stop_ghz: float,
+) -> DipoleInputs:
+    return DipoleInputs(
+        frequency_ghz=frequency_ghz,
+        total_conductor_length_mm=total_conductor_length_mm,
+        wire_radius_mm=wire_radius_mm,
+        feed_gap_mm=feed_gap_mm,
+        port_impedance_ohm=port_impedance_ohm,
+        sweep_start_ghz=sweep_start_ghz,
+        sweep_stop_ghz=sweep_stop_ghz,
+    )
+
+
+@mcp.tool()
+def preview_center_fed_dipole(
+    frequency_ghz: float = 2.45,
+    total_conductor_length_mm: float = 61.2,
+    wire_radius_mm: float = 0.5,
+    feed_gap_mm: float = 1.5,
+    port_impedance_ohm: float = 50.0,
+    sweep_start_ghz: float = 2.0,
+    sweep_stop_ghz: float = 3.0,
+    include_history_commands: bool = False,
+) -> dict:
+    """Preview a beta center-fed cylindrical dipole and discrete port."""
+
+    design = calculate_center_fed_dipole(
+        _dipole_inputs(
+            frequency_ghz,
+            total_conductor_length_mm,
+            wire_radius_mm,
+            feed_gap_mm,
+            port_impedance_ohm,
+            sweep_start_ghz,
+            sweep_stop_ghz,
+        )
+    )
+    spec = dipole_parametric_spec(design)
+    result = {
+        "write_performed": False,
+        "family": "center_fed_dipole",
+        "design": design.to_dict(),
+        "summary": spec.summary(),
+        "port": spec.ports[0].model_dump(mode="json"),
+        "solver_run": False,
+        "warnings": [
+            "This family is beta and must be inspected in CST before simulation."
+        ],
+    }
+    if include_history_commands:
+        result["history_commands"] = complete_parametric_preview(spec)
+    return result
+
+
+@mcp.tool()
+def build_center_fed_dipole(
+    project_name: str,
+    frequency_ghz: float = 2.45,
+    total_conductor_length_mm: float = 61.2,
+    wire_radius_mm: float = 0.5,
+    feed_gap_mm: float = 1.5,
+    port_impedance_ohm: float = 50.0,
+    sweep_start_ghz: float = 2.0,
+    sweep_stop_ghz: float = 3.0,
+    confirm: bool = False,
+    overwrite: bool = False,
+) -> dict:
+    """Build a beta center-fed cylindrical dipole after explicit approval."""
+
+    design = calculate_center_fed_dipole(
+        _dipole_inputs(
+            frequency_ghz,
+            total_conductor_length_mm,
+            wire_radius_mm,
+            feed_gap_mm,
+            port_impedance_ohm,
+            sweep_start_ghz,
+            sweep_stop_ghz,
+        )
+    )
+    if not confirm:
+        return {
+            "status": "confirmation_required",
+            "write_performed": False,
+            "family": "center_fed_dipole",
+            "design": design.to_dict(),
+            "message": (
+                "Show the dipole preview to the user and obtain explicit "
+                "approval, then call again with confirm=true."
+            ),
+        }
+    return CSTBridge().build_center_fed_dipole(
+        design=design,
+        project_name=project_name,
+        overwrite=overwrite,
+    )
+
+
+@mcp.tool()
+def preview_parametric_antenna(
+    spec: ParametricAntennaSpec,
+    include_history_commands: bool = False,
+) -> dict:
+    """Preview a safe custom antenna made from validated CST primitives."""
+
+    result = {
+        "write_performed": False,
+        "family": "custom_parametric",
+        "spec": spec.model_dump(mode="json"),
+        "summary": spec.summary(),
+        "solver_run": False,
+        "warnings": [
+            "Only the validated primitives in this specification are supported.",
+            "Complex topology and electromagnetic correctness require CST inspection.",
+        ],
+    }
+    if include_history_commands:
+        result["history_commands"] = complete_parametric_preview(spec)
+    return result
+
+
+@mcp.tool()
+def build_parametric_antenna(
+    project_name: str,
+    spec: ParametricAntennaSpec,
+    confirm: bool = False,
+    overwrite: bool = False,
+) -> dict:
+    """Build a validated custom primitive specification after approval."""
+
+    if not confirm:
+        return {
+            "status": "confirmation_required",
+            "write_performed": False,
+            "family": "custom_parametric",
+            "spec": spec.model_dump(mode="json"),
+            "summary": spec.summary(),
+            "message": (
+                "Show the complete primitive specification to the user and "
+                "obtain explicit approval, then call again with confirm=true."
+            ),
+        }
+    return CSTBridge().build_parametric_antenna(
+        spec=spec,
+        project_name=project_name,
+        overwrite=overwrite,
+    )
+
+
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        stream=sys.stderr,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+    mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()

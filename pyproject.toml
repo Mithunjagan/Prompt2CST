@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prompt2cst-mcp"
+version = "0.5.0b1"
+description = "A liquid-glass RF design workspace and safe MCP bridge for CST Studio Suite 2026."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Mithun Kumar J" },
+]
+keywords = [
+    "antenna",
+    "CST",
+    "LLM",
+    "MCP",
+    "OpenRouter",
+    "RF",
+    "microwave",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: Education",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "httpx>=0.28,<1",
+    "mcp>=1.28.1,<2",
+    "pydantic>=2.11,<3",
+    "PySide6>=6.8,<7",
+    "pywin32>=312; platform_system == 'Windows'",
+]
+
+[project.scripts]
+prompt2cst-mcp = "prompt2cst.server:main"
+prompt2cst-gui = "prompt2cst.gui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+prompt2cst = ["assets/*.svg", "qml/*.qml"]
