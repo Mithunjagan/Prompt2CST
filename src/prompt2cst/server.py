@@ -5,6 +5,12 @@ import sys
 
 from mcp.server.fastmcp import FastMCP
 
+from .adapters import (
+    dipole_to_design_ir,
+    monopole_to_design_ir,
+    parametric_to_design_ir,
+    patch_to_design_ir,
+)
 from .catalog import capability_catalog
 from .cst_bridge import CSTBridge
 from .cst_macros import (
@@ -22,16 +28,17 @@ from .design import (
     calculate_rectangular_patch,
     calculate_wire_monopole,
 )
-from .design_ir import DesignIR
+from .design_ir import Brick, DesignIR, ProjectMetadata
 from .parametric import ParametricAntennaSpec
 from .plan_service import PlanService
 
 SERVER_INSTRUCTIONS = """
-Prompt2CST exposes safe, typed tools for CST Studio Suite 2026. Always call a
-preview or status tool before a build tool. Never call a build tool unless the
-user explicitly approved creating or overwriting a CST project; pass
-confirm=true only after that approval. Do not claim a solver ran when the tool
-reports solver_run=false. Use only tools relevant to the requested antenna.
+Prompt2CST exposes safe, typed tools for CST Studio Suite 2026. Legacy build
+tools create immutable DesignIR previews and never write to CST. Only
+execute_approved_plan may reach the CST bridge, and it also requires a
+persisted desktop approval record plus the exact plan ID and SHA-256 hash. Do
+not claim a solver ran when the tool reports solver_run=false. Use only tools
+relevant to the requested antenna.
 Never call preview_test_brick as a substitute for a different antenna type.
 Call antenna_catalog when the requested family or required CST capability is
 unclear. Prefer a dedicated antenna-family tool. Use the custom parametric
@@ -41,6 +48,26 @@ geometry, ports, solvers or result extraction that the catalog marks missing.
 """.strip()
 
 mcp = FastMCP("Prompt2CST", instructions=SERVER_INSTRUCTIONS)
+
+
+def _legacy_build_preview(
+    design_ir: DesignIR,
+    *,
+    confirm: bool,
+    overwrite: bool,
+) -> dict:
+    preview = PlanService().preview_design_plan(design_ir)
+    return {
+        **preview,
+        "status": "approval_required",
+        "legacy_requested_confirm": confirm,
+        "legacy_requested_overwrite": overwrite,
+        "message": (
+            "Direct legacy CST writes are disabled. Review this immutable DesignIR "
+            "preview, record approval in the desktop, then execute its exact plan ID "
+            "and approval hash."
+        ),
+    }
 
 
 def _patch_inputs(
@@ -115,7 +142,7 @@ def execute_approved_plan(
     project_name: str = "",
     overwrite: bool = False,
 ) -> dict:
-    """Execute only an unchanged immutable plan after explicit approval."""
+    """Execute an unchanged plan only after persisted desktop approval."""
 
     return PlanService().execute_approved_plan(
         plan_id=plan_id,
@@ -165,19 +192,25 @@ def build_test_brick(
     confirm: bool = False,
     overwrite: bool = False,
 ) -> dict:
-    """Create the known-good PEC brick in a new CST project after confirmation."""
+    """Create an immutable test-brick plan; direct writes are disabled."""
 
-    if not confirm:
-        return {
-            "status": "confirmation_required",
-            "write_performed": False,
-            "message": (
-                "Preview the brick and obtain explicit user approval, then call "
-                "again with confirm=true."
-            ),
-        }
-    return CSTBridge().build_test_brick(
-        project_name=project_name,
+    design_ir = DesignIR(
+        project=ProjectMetadata(name=project_name, requested_topology="test brick"),
+        geometry=[
+            Brick(
+                id="test_brick",
+                name="Prompt2CST_Test_Brick",
+                material="PEC",
+                x=(-5, 5),
+                y=(-5, 5),
+                z=(0, 1),
+                operation_order=1,
+            )
+        ],
+    )
+    return _legacy_build_preview(
+        design_ir,
+        confirm=confirm,
         overwrite=overwrite,
     )
 
@@ -238,7 +271,7 @@ def build_rectangular_patch(
     confirm: bool = False,
     overwrite: bool = False,
 ) -> dict:
-    """Build first-pass patch geometry in CST after explicit confirmation."""
+    """Create an immutable patch plan; direct legacy writes are disabled."""
 
     design = calculate_rectangular_patch(
         _patch_inputs(
@@ -252,22 +285,13 @@ def build_rectangular_patch(
             inset_gap_mm,
         )
     )
-    if not confirm:
-        return {
-            "status": "confirmation_required",
-            "write_performed": False,
-            "design": design.to_dict(),
-            "message": (
-                "Show this design to the user and obtain explicit approval, "
-                "then call again with confirm=true."
-            ),
-        }
-
-    return CSTBridge().build_rectangular_patch(
-        design=design,
-        project_name=project_name,
+    design_ir = patch_to_design_ir(design, project_name)
+    if not include_boundary_setup:
+        design_ir = design_ir.model_copy(update={"boundaries": None})
+    return _legacy_build_preview(
+        design_ir,
+        confirm=confirm,
         overwrite=overwrite,
-        include_boundary_setup=include_boundary_setup,
     )
 
 
@@ -366,7 +390,7 @@ def build_wire_monopole(
     confirm: bool = False,
     overwrite: bool = False,
 ) -> dict:
-    """Build beta wire-monopole geometry and setup after explicit approval."""
+    """Create an immutable monopole plan; direct legacy writes are disabled."""
 
     design = calculate_wire_monopole(
         _monopole_inputs(
@@ -381,24 +405,18 @@ def build_wire_monopole(
             sweep_stop_ghz,
         )
     )
-    if not confirm:
-        return {
-            "status": "confirmation_required",
-            "write_performed": False,
-            "design": design.to_dict(),
-            "message": (
-                "Show the wire-monopole preview to the user and obtain "
-                "explicit approval, then call again with confirm=true."
-            ),
+    design_ir = monopole_to_design_ir(design, project_name)
+    design_ir = design_ir.model_copy(
+        update={
+            "excitations": design_ir.excitations if include_port else [],
+            "boundaries": design_ir.boundaries if include_boundary_setup else None,
+            "monitors": design_ir.monitors if include_farfield_monitor else [],
         }
-
-    return CSTBridge().build_wire_monopole(
-        design=design,
-        project_name=project_name,
+    )
+    return _legacy_build_preview(
+        design_ir,
+        confirm=confirm,
         overwrite=overwrite,
-        include_port=include_port,
-        include_boundary_setup=include_boundary_setup,
-        include_farfield_monitor=include_farfield_monitor,
     )
 
 
@@ -476,7 +494,7 @@ def build_center_fed_dipole(
     confirm: bool = False,
     overwrite: bool = False,
 ) -> dict:
-    """Build a beta center-fed cylindrical dipole after explicit approval."""
+    """Create an immutable dipole plan; direct legacy writes are disabled."""
 
     design = calculate_center_fed_dipole(
         _dipole_inputs(
@@ -489,20 +507,9 @@ def build_center_fed_dipole(
             sweep_stop_ghz,
         )
     )
-    if not confirm:
-        return {
-            "status": "confirmation_required",
-            "write_performed": False,
-            "family": "center_fed_dipole",
-            "design": design.to_dict(),
-            "message": (
-                "Show the dipole preview to the user and obtain explicit "
-                "approval, then call again with confirm=true."
-            ),
-        }
-    return CSTBridge().build_center_fed_dipole(
-        design=design,
-        project_name=project_name,
+    return _legacy_build_preview(
+        dipole_to_design_ir(design, project_name),
+        confirm=confirm,
         overwrite=overwrite,
     )
 
@@ -537,23 +544,15 @@ def build_parametric_antenna(
     confirm: bool = False,
     overwrite: bool = False,
 ) -> dict:
-    """Build a validated custom primitive specification after approval."""
+    """Create an immutable custom plan; direct legacy writes are disabled."""
 
-    if not confirm:
-        return {
-            "status": "confirmation_required",
-            "write_performed": False,
-            "family": "custom_parametric",
-            "spec": spec.model_dump(mode="json"),
-            "summary": spec.summary(),
-            "message": (
-                "Show the complete primitive specification to the user and "
-                "obtain explicit approval, then call again with confirm=true."
-            ),
-        }
-    return CSTBridge().build_parametric_antenna(
-        spec=spec,
-        project_name=project_name,
+    design_ir = parametric_to_design_ir(spec)
+    design_ir = design_ir.model_copy(
+        update={"project": design_ir.project.model_copy(update={"name": project_name})}
+    )
+    return _legacy_build_preview(
+        design_ir,
+        confirm=confirm,
         overwrite=overwrite,
     )
 

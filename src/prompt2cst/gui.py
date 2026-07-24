@@ -23,39 +23,79 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from . import __version__
 from .agent import OpenRouterAgent, format_exception_details
 from .capabilities import capability_browser
-from .orchestration import ModelRole, role_configs_from_environment
+from .orchestration import (
+    ModelRole,
+    OpenAICompatibleProvider,
+    ProviderRouter,
+    RoleConfig,
+    role_configs_from_environment,
+)
+from .plan_service import PlanService
+from .session_history import PromptHistoryStore
+from .swarm import SwarmCoordinator, SwarmRunResult, SwarmSessionStore
 from .ui_logic import (
     EXAMPLE_PROMPTS,
     FAMILY_OPTIONS,
-    compose_user_request,
+    PHASE_OPTIONS,
+    compose_swarm_request,
+    role_for_phase,
 )
 
 
 class AgentWorker(QObject):
     log = Signal(str)
-    completed = Signal(str)
+    completed = Signal(object)
     failed = Signal(str)
     approval_requested = Signal(object)
 
-    def __init__(self, api_key: str, model: str, prompt: str) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        prompt: str,
+        phase: str,
+        session_id: str,
+        role_configs: dict[ModelRole, RoleConfig],
+    ) -> None:
         super().__init__()
         self.api_key = api_key
-        self.model = model
         self.prompt = prompt
+        self.phase = phase
+        self.session_id = session_id
+        self.role_configs = role_configs
 
     @Slot()
     def run(self) -> None:
         try:
             self.log.emit("GUI worker started")
-            agent = OpenRouterAgent(
-                api_key=self.api_key,
-                model=self.model,
-                log=self.log.emit,
-            )
+            router = None
+            if self.api_key:
+                provider = OpenAICompatibleProvider(
+                    api_key=self.api_key,
+                    base_url="https://openrouter.ai/api/v1",
+                    name="openrouter",
+                    log=lambda event: self.log.emit(
+                        "[provider] " + json.dumps(event, default=str)
+                    ),
+                )
+                configs = {
+                    role: RoleConfig(
+                        role=role,
+                        provider="openrouter",
+                        model=config.model,
+                        fallback_models=config.fallback_models,
+                        timeout_seconds=config.timeout_seconds,
+                        enabled=config.enabled,
+                    )
+                    for role, config in self.role_configs.items()
+                }
+                router = ProviderRouter({"openrouter": provider}, configs)
+            coordinator = SwarmCoordinator(router, log=self.log.emit)
             result = asyncio.run(
-                agent.run(
-                    user_prompt=self.prompt,
-                    approve_write=self._request_approval,
+                coordinator.run(
+                    prompt=self.prompt,
+                    target_phase=self.phase,
+                    session_id=self.session_id,
+                    approve_build=self._request_approval,
                 )
             )
             self.completed.emit(result)
@@ -121,8 +161,11 @@ class Prompt2CSTController(QObject):
     statusChanged = Signal()
     assistantTextChanged = Signal()
     activityTextChanged = Signal()
+    promptHistoryChanged = Signal()
+    canBuildChanged = Signal()
     modelSettingsChanged = Signal()
     approvalRequested = Signal(str, str, str)
+    promptRestored = Signal(str, str, str)
     showError = Signal(str)
 
     def __init__(self) -> None:
@@ -132,12 +175,40 @@ class Prompt2CSTController(QObject):
         self._status = "Ready"
         self._assistant_text = ""
         self._activity_text = ""
+        self._history = PromptHistoryStore()
+        self._swarm_sessions = SwarmSessionStore()
+        self._active_history_id = ""
+        self._running_history_id = ""
+        self._active_swarm_session_id = self._swarm_sessions.latest_id()
+        self._active_preview_prompt = ""
+        self._active_preview_plan_id = ""
+        self._reviewing_preview = False
+        self._running_prompt = ""
+        self._running_phase = ""
         self._pending_approval: ApprovalRequest | None = None
         self._agent_thread: QThread | None = None
         self._agent_worker: AgentWorker | None = None
         self._model_thread: QThread | None = None
         self._model_worker: ModelWorker | None = None
         self._role_configs = role_configs_from_environment(self._models[0])
+        self._explicit_role_models: set[ModelRole] = {
+            role
+            for role, suffix in {
+                ModelRole.REQUIREMENTS: "REQUIREMENTS",
+                ModelRole.CALCULATIONS: "CALCULATIONS",
+                ModelRole.PARAMETERS: "PARAMETERS",
+                ModelRole.GEOMETRY: "GEOMETRY",
+                ModelRole.SIMULATION: "SIMULATION",
+                ModelRole.CRITIC: "CRITIC",
+                ModelRole.CODE_REVIEW: "CODE_REVIEW",
+                ModelRole.RESULTS_ANALYSIS: "RESULTS",
+            }.items()
+            if os.getenv(f"MODEL_{suffix}")
+            or (
+                role in {ModelRole.CALCULATIONS, ModelRole.PARAMETERS}
+                and os.getenv("MODEL_RF_REASONING")
+            )
+        }
         self._provider_health = "Not checked"
 
     @Property(str, constant=True)
@@ -153,6 +224,28 @@ class Prompt2CSTController(QObject):
                 "description": description,
             }
             for display, family_id, description in FAMILY_OPTIONS
+        ]
+
+    @Property("QVariantList", constant=True)
+    def phaseOptions(self) -> list[dict[str, str]]:
+        return [
+            {
+                "display": display,
+                "id": phase_id,
+                "description": description,
+                "role": role_for_phase(phase_id),
+            }
+            for display, phase_id, description in PHASE_OPTIONS
+        ]
+
+    @Property("QVariantList", constant=True)
+    def roleOptions(self) -> list[dict[str, str]]:
+        return [
+            {
+                "display": role.value.replace("_", " ").title(),
+                "id": role.value,
+            }
+            for role in ModelRole
         ]
 
     @Property("QStringList", notify=modelsChanged)
@@ -174,6 +267,29 @@ class Prompt2CSTController(QObject):
     @Property(str, notify=activityTextChanged)
     def activityText(self) -> str:
         return self._activity_text
+
+    @Property("QVariantList", notify=promptHistoryChanged)
+    def promptHistory(self) -> list[dict[str, str]]:
+        return self._history.summaries()
+
+    @Property(bool, notify=canBuildChanged)
+    def canBuild(self) -> bool:
+        if not self._active_swarm_session_id or not self._reviewing_preview:
+            return False
+        try:
+            session = self._swarm_sessions.load(self._active_swarm_session_id)
+        except (FileNotFoundError, ValueError):
+            return False
+        return bool(
+            session.preview
+            and session.preview.get("approval_allowed")
+            and session.preview.get("plan_id") == self._active_preview_plan_id
+            and session.execution is None
+        )
+
+    @Property(str, notify=canBuildChanged)
+    def activePreviewPrompt(self) -> str:
+        return self._active_preview_prompt
 
     @Property(str, notify=modelSettingsChanged)
     def modelOrchestrationText(self) -> str:
@@ -212,6 +328,33 @@ class Prompt2CSTController(QObject):
 
     @Slot()
     def clearResults(self) -> None:
+        if self._busy:
+            self.showError.emit(
+                "Wait for the active swarm run to finish before clearing."
+            )
+            return
+        plan_service = PlanService()
+        for session in self._swarm_sessions.list_sessions():
+            if session.preview and not session.execution:
+                try:
+                    plan_service.invalidate_plan(
+                        str(session.preview["plan_id"]),
+                        "Conversation history cleared by user",
+                    )
+                except (FileNotFoundError, KeyError, PermissionError, ValueError):
+                    continue
+        self._history.clear()
+        self._swarm_sessions.clear()
+        self._active_history_id = ""
+        self._running_history_id = ""
+        self._active_swarm_session_id = ""
+        self._active_preview_prompt = ""
+        self._active_preview_plan_id = ""
+        self._reviewing_preview = False
+        self._running_prompt = ""
+        self._running_phase = ""
+        self.promptHistoryChanged.emit()
+        self.canBuildChanged.emit()
         self._set_assistant_text("")
         self._set_activity_text("")
         self._set_status("Ready")
@@ -233,7 +376,7 @@ class Prompt2CSTController(QObject):
             return
 
         self._set_busy(True)
-        self._set_status("Refreshing tool-capable models…")
+        self._set_status("Refreshing structured/tool models…")
         worker = ModelWorker(api_key.strip())
         thread = QThread(self)
         worker.moveToThread(thread)
@@ -266,10 +409,60 @@ class Prompt2CSTController(QObject):
             )
             for role, config in self._role_configs.items()
         }
+        self._explicit_role_models = set(ModelRole)
         self.modelSettingsChanged.emit()
         self._set_status("Assigned selected model to all roles")
 
-    @Slot(str, str, str, str, str)
+    @Slot(str, str)
+    def setRoleModel(self, role_value: str, model: str) -> None:
+        selected = model.strip()
+        if not selected:
+            self.showError.emit("Choose or type a model ID first.")
+            return
+        try:
+            role = ModelRole(role_value)
+        except ValueError:
+            self.showError.emit("Unknown model role.")
+            return
+        config = self._role_configs[role]
+        self._role_configs[role] = config.__class__(
+            role=role,
+            provider=config.provider,
+            model=selected,
+            fallback_models=config.fallback_models,
+            timeout_seconds=config.timeout_seconds,
+            enabled=config.enabled,
+        )
+        self._explicit_role_models.add(role)
+        self.modelSettingsChanged.emit()
+        self._set_status(f"Assigned {selected} to {role.value}")
+
+    @Slot(str)
+    def loadHistoryEntry(self, record_id: str) -> None:
+        if self._busy:
+            self.showError.emit(
+                "Wait for the active swarm run before changing history."
+            )
+            return
+        try:
+            record = self._history.get(record_id)
+        except KeyError:
+            self.showError.emit("History item was not found.")
+            return
+        self._active_history_id = record.id
+        self._active_swarm_session_id = record.session_id
+        self._active_preview_prompt = record.prompt
+        self._active_preview_plan_id = record.plan_id
+        self._reviewing_preview = bool(
+            record.plan_id and record.phase in {"preview", "build"}
+        )
+        self.canBuildChanged.emit()
+        self._set_assistant_text(record.assistant_text)
+        self._set_activity_text(record.activity_text)
+        self._set_status(f"Loaded {record.phase} history")
+        self.promptRestored.emit(record.prompt, record.family_id, record.phase)
+
+    @Slot(str, str, str, str, str, str)
     def runAgent(
         self,
         api_key: str,
@@ -277,29 +470,91 @@ class Prompt2CSTController(QObject):
         family_id: str,
         prompt: str,
         mode: str,
+        phase: str,
     ) -> None:
         if self._busy:
             return
-        if not api_key.strip():
+        active_phase = "build" if mode == "build" else phase or "preview"
+        if active_phase != "build" and not api_key.strip():
             self.showError.emit("Enter your OpenRouter API key.")
             return
-        if not model.strip():
-            self.showError.emit("Choose or type a tool-capable OpenRouter model ID.")
+        if active_phase != "build" and not model.strip():
+            self.showError.emit("Choose or type a structured-output model ID.")
             return
-        try:
-            composed_prompt = compose_user_request(
-                prompt,
-                family_id or "auto",
-                mode,
+        if active_phase == "build":
+            composed_prompt = prompt.strip()
+            if not self._active_swarm_session_id:
+                self.showError.emit("Create and review a preview before building.")
+                return
+            if prompt.strip() != self._active_preview_prompt:
+                self.showError.emit(
+                    "The prompt changed after preview. Preview this revision before "
+                    "building."
+                )
+                return
+        else:
+            try:
+                composed_prompt = compose_swarm_request(
+                    prompt,
+                    family_id or "auto",
+                )
+            except ValueError as exc:
+                self.showError.emit(str(exc))
+                return
+            if not self._active_swarm_session_id:
+                self._active_swarm_session_id = self._swarm_sessions.create().id
+            self._reviewing_preview = False
+            self._active_preview_prompt = ""
+            self._active_preview_plan_id = ""
+            self.canBuildChanged.emit()
+
+        selected_model = model.strip()
+        role_configs = {
+            role: (
+                config
+                if role in self._explicit_role_models
+                else RoleConfig(
+                    role=role,
+                    provider=config.provider,
+                    model=selected_model,
+                    fallback_models=config.fallback_models,
+                    timeout_seconds=config.timeout_seconds,
+                    enabled=config.enabled,
+                )
             )
-        except ValueError as exc:
-            self.showError.emit(str(exc))
-            return
+            for role, config in self._role_configs.items()
+        }
+        configured_models = [
+            config.model for config in role_configs.values() if config.model
+        ]
+        history_model = (
+            "deterministic executor"
+            if active_phase == "build"
+            else f"swarm · {len(set(configured_models))} configured model(s)"
+        )
 
         self._set_assistant_text("")
-        self._set_activity_text(
-            f"Model: {model.strip()}\nFamily: {family_id or 'auto'}\nMode: {mode}\n"
+        activity_text = (
+            f"Architecture: specialist swarm\n"
+            f"Phase: {active_phase}\n"
+            f"Family: {family_id or 'auto'}\n"
+            f"Mode: {mode}\n"
         )
+        self._set_activity_text(activity_text)
+        record = self._history.create(
+            prompt=prompt.strip(),
+            family_id=family_id or "auto",
+            mode=mode,
+            phase=active_phase,
+            role=role_for_phase(active_phase),
+            model=history_model,
+            activity_text=activity_text,
+            session_id=self._active_swarm_session_id,
+        )
+        self._running_history_id = record.id
+        self._running_prompt = prompt.strip()
+        self._running_phase = active_phase
+        self.promptHistoryChanged.emit()
         self._set_busy(True)
         self._set_status(
             "Generating safe preview…" if mode == "preview" else "Preparing CST build…"
@@ -307,8 +562,10 @@ class Prompt2CSTController(QObject):
 
         worker = AgentWorker(
             api_key.strip(),
-            model.strip(),
             composed_prompt,
+            active_phase,
+            self._active_swarm_session_id,
+            role_configs,
         )
         thread = QThread(self)
         worker.moveToThread(thread)
@@ -350,7 +607,7 @@ class Prompt2CSTController(QObject):
         self.modelsChanged.emit()
         self.modelSettingsChanged.emit()
         self._set_busy(False)
-        self._set_status(f"Loaded {len(models)} tool-capable models")
+        self._set_status(f"Loaded {len(models)} structured/tool models")
 
     @Slot(str)
     def _models_failed(self, error: str) -> None:
@@ -383,20 +640,43 @@ class Prompt2CSTController(QObject):
             json.dumps(request.preview, indent=2, default=str),
         )
 
-    @Slot(str)
-    def _agent_completed(self, result: str) -> None:
-        self._set_assistant_text(result)
+    @Slot(object)
+    def _agent_completed(self, result: SwarmRunResult) -> None:
+        self._active_swarm_session_id = result.session_id
+        if result.phase.value == "preview":
+            self._active_preview_prompt = self._running_prompt
+            self._reviewing_preview = True
+            try:
+                session = self._swarm_sessions.load(result.session_id)
+                self._active_preview_plan_id = str(session.preview["plan_id"])
+            except (FileNotFoundError, KeyError, TypeError):
+                self._active_preview_plan_id = ""
+                self._reviewing_preview = False
+        elif result.phase.value != "build":
+            self._active_preview_prompt = ""
+            self._active_preview_plan_id = ""
+            self._reviewing_preview = False
+        self.canBuildChanged.emit()
+        self._set_assistant_text(result.assistant_text)
+        self._set_activity_text(result.activity_text)
+        self._save_active_history("COMPLETED")
         self._set_busy(False)
         self._set_status("Completed")
 
     @Slot(str)
     def _agent_failed(self, error: str) -> None:
+        if self._running_phase != "build":
+            self._active_preview_prompt = ""
+            self._active_preview_plan_id = ""
+            self._reviewing_preview = False
+            self.canBuildChanged.emit()
         self._set_activity_text(f"{self._activity_text}\n\nERROR\n{error}")
         self._set_assistant_text(
             "## Request failed\n\n"
             "Open **Activity** for the exact error and retry only after "
             "correcting it."
         )
+        self._save_active_history("FAILED")
         self._set_busy(False)
         self._set_status("Failed")
         self.showError.emit(error)
@@ -429,6 +709,35 @@ class Prompt2CSTController(QObject):
             return
         self._activity_text = value
         self.activityTextChanged.emit()
+
+    def _save_active_history(self, status: str) -> None:
+        if not self._running_history_id:
+            return
+        try:
+            plan_id = ""
+            approval_hash = ""
+            if self._active_swarm_session_id:
+                session = self._swarm_sessions.load(self._active_swarm_session_id)
+                if session.preview:
+                    plan_id = str(session.preview.get("plan_id", ""))
+                    approval_hash = str(session.preview.get("approval_hash", ""))
+            self._history.update(
+                self._running_history_id,
+                status=status,
+                assistant_text=self._assistant_text,
+                activity_text=self._activity_text,
+                session_id=self._active_swarm_session_id,
+                plan_id=plan_id,
+                approval_hash=approval_hash,
+            )
+        except (FileNotFoundError, KeyError, ValueError):
+            self._running_history_id = ""
+            return
+        self._active_history_id = self._running_history_id
+        self._running_history_id = ""
+        self._running_prompt = ""
+        self._running_phase = ""
+        self.promptHistoryChanged.emit()
 
 
 def _enable_windows_backdrop(window: QObject) -> None:

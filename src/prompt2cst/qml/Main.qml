@@ -240,8 +240,96 @@ ApplicationWindow {
                     }
                 }
 
-                Item {
+                Text {
+                    text: "PROMPT HISTORY"
+                    color: root.muted
+                    font.pixelSize: 10
+                    font.letterSpacing: 1.5
+                    font.weight: Font.DemiBold
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
                     Layout.fillHeight: true
+                    Layout.minimumHeight: 150
+                    radius: 18
+                    color: Qt.rgba(0.025, 0.055, 0.09, 0.72)
+                    border.width: 1
+                    border.color: Qt.rgba(0.55, 0.74, 0.93, 0.14)
+                    clip: true
+
+                    Text {
+                        anchors.centerIn: parent
+                        width: parent.width - 26
+                        visible: root.backend.promptHistory.length === 0
+                        text: "Prompt runs stay here until Clear."
+                        color: "#60758C"
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: 11
+                    }
+
+                    ScrollView {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        visible: root.backend.promptHistory.length > 0
+
+                        ListView {
+                            id: historyList
+                            model: root.backend.promptHistory
+                            spacing: 8
+                            clip: true
+
+                            delegate: Rectangle {
+                                id: historyItem
+                                required property var modelData
+                                width: historyList.width
+                                height: 76
+                                radius: 14
+                                color: Qt.rgba(0.06, 0.14, 0.21, 0.62)
+                                border.width: 1
+                                border.color: Qt.rgba(0.31, 0.82, 0.95, 0.13)
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 3
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: historyItem.modelData.title
+                                        color: root.ink
+                                        elide: Text.ElideRight
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: historyItem.modelData.phase + " · " +
+                                              historyItem.modelData.status
+                                        color: root.cyan
+                                        elide: Text.ElideRight
+                                        font.pixelSize: 10
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: historyItem.modelData.model
+                                        color: root.muted
+                                        elide: Text.ElideRight
+                                        font.pixelSize: 9
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        root.backend.loadHistoryEntry(
+                                            historyItem.modelData.id);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Rectangle {
@@ -493,7 +581,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         spacing: 7
                         Text {
-                            text: "TOOL-CAPABLE MODEL"
+                            text: "STRUCTURED / TOOL MODEL"
                             color: root.muted
                             font.pixelSize: 10
                             font.letterSpacing: 1.4
@@ -675,6 +763,62 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                         }
 
+                        Text {
+                            text: "EXECUTION PHASE"
+                            color: root.muted
+                            font.pixelSize: 10
+                            font.letterSpacing: 1.4
+                            font.weight: Font.DemiBold
+                        }
+
+                        ComboBox {
+                            id: phaseCombo
+                            Layout.fillWidth: true
+                            implicitHeight: root.compactHeight ? 42 : 48
+                            model: root.backend.phaseOptions
+                            textRole: "display"
+                            valueRole: "id"
+                            enabled: !root.backend.busy
+                            leftPadding: 16
+                            currentIndex: 6
+
+                            contentItem: Text {
+                                leftPadding: 14
+                                rightPadding: 36
+                                text: phaseCombo.displayText
+                                color: root.ink
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideRight
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
+                            }
+                            indicator: ChevronIndicator {
+                                implicitHeight: phaseCombo.height
+                                x: phaseCombo.width - width
+                                iconColor: phaseCombo.enabled ? root.muted :
+                                                                  Qt.rgba(0.56, 0.65, 0.75, 0.45)
+                                expanded: phaseCombo.popup.visible
+                            }
+                            background: Rectangle {
+                                radius: 17
+                                color: Qt.rgba(0.025, 0.055, 0.09, 0.82)
+                                border.width: 1
+                                border.color: phaseCombo.activeFocus ? root.cyan : Qt.rgba(0.55,
+                                                                                           0.74, 0.93,
+                                                                                           0.18)
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: phaseCombo.currentIndex >= 0
+                                  ? root.backend.phaseOptions[phaseCombo.currentIndex].description :
+                                    ""
+                            color: "#9CB5CB"
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                        }
+
                         RowLayout {
                             Layout.fillWidth: true
                             Text {
@@ -771,7 +915,8 @@ ApplicationWindow {
                                     root.activeReviewTab = 1;
                                     root.backend.runAgent(apiKey.text, modelCombo.currentText,
                                                           familyCombo.currentValue, promptArea.text,
-                                                          "preview");
+                                                          "preview",
+                                                          phaseCombo.currentValue);
                                 }
                             }
                             LiquidButton {
@@ -781,11 +926,14 @@ ApplicationWindow {
                                 iconText: "◇"
                                 variant: "build"
                                 enabled: !root.backend.busy
+                                         && root.backend.canBuild
+                                         && promptArea.text.trim()
+                                            === root.backend.activePreviewPrompt
                                 onClicked: {
                                     root.activeReviewTab = 1;
                                     root.backend.runAgent(apiKey.text, modelCombo.currentText,
                                                           familyCombo.currentValue, promptArea.text,
-                                                          "build");
+                                                          "build", "build");
                                 }
                             }
                         }
@@ -834,6 +982,7 @@ ApplicationWindow {
                                 implicitWidth: 88
                                 implicitHeight: 38
                                 text: "Clear"
+                                enabled: !root.backend.busy
                                 onClicked: root.backend.clearResults()
                             }
                         }
@@ -1182,6 +1331,24 @@ ApplicationWindow {
             }
             RowLayout {
                 Layout.fillWidth: true
+                ComboBox {
+                    id: roleCombo
+                    visible: root.infoTitle === "Model orchestration"
+                    Layout.preferredWidth: 260
+                    model: root.backend.roleOptions
+                    textRole: "display"
+                    valueRole: "id"
+                }
+                LiquidButton {
+                    visible: root.infoTitle === "Model orchestration"
+                    text: "Assign selected role"
+                    implicitWidth: 200
+                    onClicked: {
+                        root.backend.setRoleModel(roleCombo.currentValue,
+                                                  modelCombo.currentText);
+                        root.infoText = root.backend.modelOrchestrationText;
+                    }
+                }
                 LiquidButton {
                     visible: root.infoTitle === "Model orchestration"
                     text: "Use selected model for all roles"
@@ -1246,6 +1413,16 @@ ApplicationWindow {
             root.approvalArguments = argumentsJson;
             root.approvalPreview = previewJson;
             approvalDialog.open();
+        }
+
+        function onPromptRestored(prompt, familyId, phaseId) {
+            promptArea.text = prompt;
+            var familyIndex = familyCombo.indexOfValue(familyId);
+            if (familyIndex >= 0)
+                familyCombo.currentIndex = familyIndex;
+            var phaseIndex = phaseCombo.indexOfValue(phaseId);
+            if (phaseIndex >= 0)
+                phaseCombo.currentIndex = phaseIndex;
         }
 
         function onShowError(message) {

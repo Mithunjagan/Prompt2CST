@@ -6,7 +6,9 @@ Run the complete offline verification:
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe -m compileall -q src tests
 .\.venv\Scripts\python.exe -m pip check
-.\.venv\Scripts\pyside6-qmllint.exe -I src\prompt2cst\qml src\prompt2cst\qml\*.qml
+Get-ChildItem src\prompt2cst\qml\*.qml | ForEach-Object {
+    .\.venv\Scripts\pyside6-qmllint.exe -I src\prompt2cst\qml $_.FullName
+}
 .\.venv\Scripts\python.exe -m pip wheel . --no-deps --wheel-dir outputs\package-audit
 ```
 
@@ -15,7 +17,10 @@ DesignIR schemas, capability checks, dependency/geometry/material/port/
 simulation validation, legacy adapters, Boolean and transform compilation,
 compiler determinism, model fallback and structured-output rejection, batched
 preview, approval hashing, plan tampering, progress persistence, and normalized
-missing-result behavior.
+missing-result behavior. Swarm tests additionally cover role order, typed
+handoffs, deterministic calculation ownership, persistent conversations,
+revision invalidation, model provenance, denial without writes, and exact-plan
+builds without another model call.
 
 ## Live CST testing
 

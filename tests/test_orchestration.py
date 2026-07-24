@@ -45,6 +45,32 @@ class FakeStructuredClient:
         return FakeStructuredResponse()
 
 
+class FakeModeResponse:
+    def __init__(self, *, success, status_code, payload):
+        self.is_success = success
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+class FakeModeClient:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.payloads = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def post(self, *_args, **kwargs):
+        self.payloads.append(kwargs["json"])
+        return next(self.responses)
+
+
 class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_fallback_model_is_used(self):
         provider = MockProvider(
@@ -107,6 +133,94 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
                     model="test-model",
                 )
         self.assertEqual(client.calls, 2)
+
+    async def test_rejected_json_schema_falls_back_to_json_object(self):
+        client = FakeModeClient(
+            [
+                FakeModeResponse(
+                    success=False,
+                    status_code=400,
+                    payload={"error": {"message": "unsupported response format"}},
+                ),
+                FakeModeResponse(
+                    success=True,
+                    status_code=200,
+                    payload={
+                        "choices": [{"message": {"content": '{"answer":"ok"}'}}],
+                        "usage": {},
+                    },
+                ),
+            ]
+        )
+        provider = OpenAICompatibleProvider(
+            api_key="test-key",
+            base_url="https://provider.invalid/v1",
+            max_retries=1,
+        )
+
+        with patch(
+            "prompt2cst.orchestration.httpx.AsyncClient",
+            return_value=client,
+        ):
+            result = await provider.generate_structured(
+                ModelRole.REQUIREMENTS,
+                [{"role": "user", "content": "parse"}],
+                StructuredAnswer,
+                timeout=1,
+                model="test-model",
+            )
+
+        self.assertEqual(result.value.answer, "ok")
+        self.assertEqual(
+            client.payloads[0]["response_format"]["type"],
+            "json_schema",
+        )
+        self.assertEqual(
+            client.payloads[1]["response_format"]["type"],
+            "json_object",
+        )
+
+    async def test_empty_structured_content_is_retried_safely(self):
+        client = FakeModeClient(
+            [
+                FakeModeResponse(
+                    success=True,
+                    status_code=200,
+                    payload={
+                        "choices": [{"message": {"content": None}}],
+                        "usage": {},
+                    },
+                ),
+                FakeModeResponse(
+                    success=True,
+                    status_code=200,
+                    payload={
+                        "choices": [{"message": {"content": '{"answer":"ok"}'}}],
+                        "usage": {},
+                    },
+                ),
+            ]
+        )
+        provider = OpenAICompatibleProvider(
+            api_key="test-key",
+            base_url="https://provider.invalid/v1",
+            max_retries=1,
+        )
+
+        with patch(
+            "prompt2cst.orchestration.httpx.AsyncClient",
+            return_value=client,
+        ):
+            result = await provider.generate_structured(
+                ModelRole.REQUIREMENTS,
+                [{"role": "user", "content": "parse"}],
+                StructuredAnswer,
+                timeout=1,
+                model="test-model",
+            )
+
+        self.assertEqual(result.value.answer, "ok")
+        self.assertEqual(len(client.payloads), 2)
 
     def test_secret_redaction(self):
         redacted = redact_secrets(

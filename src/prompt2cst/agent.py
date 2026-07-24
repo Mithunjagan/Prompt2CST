@@ -173,8 +173,10 @@ def filter_tool_capable_models(payload: dict[str, Any]) -> list[str]:
     models = []
     for item in payload.get("data", []):
         model_id = item.get("id")
-        supported = item.get("supported_parameters") or []
-        if model_id and "tools" in supported:
+        supported = set(item.get("supported_parameters") or [])
+        if model_id and supported.intersection(
+            {"tools", "structured_outputs", "response_format"}
+        ):
             models.append(model_id)
     return sorted(set(models), key=str.casefold)
 
@@ -228,6 +230,7 @@ class OpenRouterAgent:
         model: str,
         log: LogCallback | None = None,
         base_url: str = OPENROUTER_BASE_URL,
+        model_candidates: list[str] | tuple[str, ...] | None = None,
     ) -> None:
         if not api_key.strip():
             raise ValueError("An OpenRouter API key is required")
@@ -235,7 +238,11 @@ class OpenRouterAgent:
             raise ValueError("An OpenRouter model ID is required")
 
         self.api_key = api_key.strip()
-        self.model = model.strip()
+        candidates = [model.strip(), *(model_candidates or ())]
+        self.model_candidates = tuple(
+            dict.fromkeys(item.strip() for item in candidates if item.strip())
+        )
+        self.model = self.model_candidates[0]
         self.base_url = base_url.rstrip("/")
         self.log = log or (lambda _message: None)
 
@@ -285,20 +292,11 @@ class OpenRouterAgent:
             timeout = httpx.Timeout(75.0, connect=15.0)
             async with httpx.AsyncClient(timeout=timeout) as client:
                 for step in range(1, MAX_AGENT_STEPS + 1):
-                    self.log(
-                        f"OpenRouter request {step}/{MAX_AGENT_STEPS} "
-                        f"using {self.model}"
-                    )
-                    response = await client.post(
-                        f"{self.base_url}/chat/completions",
-                        headers=self.headers,
-                        json={
-                            "model": self.model,
-                            "messages": messages,
-                            "tools": tools,
-                            "tool_choice": "auto",
-                            "temperature": 0.1,
-                        },
+                    response = await self._request_chat_completion(
+                        client,
+                        step,
+                        messages,
+                        tools,
                     )
                     await _raise_for_openrouter_error(response)
                     message = _extract_message(response.json())
@@ -411,6 +409,38 @@ class OpenRouterAgent:
             preview_key = json.dumps([tool_name, arguments], sort_keys=True)
             previews[preview_key] = python_result
         return python_result
+
+    async def _request_chat_completion(
+        self,
+        client: httpx.AsyncClient,
+        step: int,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> httpx.Response:
+        last_error: Prompt2CSTAgentError | None = None
+        for candidate in self.model_candidates:
+            self.log(f"OpenRouter request {step}/{MAX_AGENT_STEPS} using {candidate}")
+            response = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers=self.headers,
+                json={
+                    "model": candidate,
+                    "messages": messages,
+                    "tools": tools,
+                    "tool_choice": "auto",
+                    "temperature": 0.1,
+                },
+            )
+            try:
+                await _raise_for_openrouter_error(response)
+                self.model = candidate
+                return response
+            except Prompt2CSTAgentError as exc:
+                last_error = exc
+                self.log(f"Model failed: {candidate}")
+        if last_error is not None:
+            raise last_error
+        raise Prompt2CSTAgentError("No model candidates are configured")
 
 
 def _extract_message(payload: dict[str, Any]) -> dict[str, Any]:

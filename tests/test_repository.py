@@ -59,6 +59,11 @@ class RepositoryReleaseTests(unittest.TestCase):
                 str(path),
             )
 
+    def test_mcp_server_has_no_direct_legacy_cst_write(self) -> None:
+        server = (ROOT / "src/prompt2cst/server.py").read_text()
+        self.assertNotIn("CSTBridge().build_", server)
+        self.assertIn("PlanService().preview_design_plan", server)
+
 
 if __name__ == "__main__":
     unittest.main()

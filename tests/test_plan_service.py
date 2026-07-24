@@ -67,6 +67,22 @@ class PlanServiceTests(unittest.TestCase):
             )
         self.assertFalse(FakeBridge.calls)
 
+    def test_invalidated_plan_cannot_execute(self):
+        preview = self.service.preview_design_plan(self.design)
+        invalidation = self.service.invalidate_plan(
+            preview["plan_id"],
+            "Design revision changed",
+        )
+
+        self.assertTrue(invalidation["invalidated"])
+        with self.assertRaisesRegex(ValueError, "not awaiting approval"):
+            self.service.execute_approved_plan(
+                preview["plan_id"],
+                preview["approval_hash"],
+                approved=True,
+            )
+        self.assertFalse(FakeBridge.calls)
+
     def test_stored_plan_tampering_is_detected(self):
         preview = self.service.preview_design_plan(self.design)
         plan_path = Path(self.temp.name) / "plans" / f"{preview['plan_id']}.json"
@@ -76,8 +92,33 @@ class PlanServiceTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.service.get_design_plan(preview["plan_id"])
 
+    def test_approval_visible_preview_tampering_is_detected(self):
+        preview = self.service.preview_design_plan(self.design)
+        plan_path = Path(self.temp.name) / "plans" / f"{preview['plan_id']}.json"
+        payload = json.loads(plan_path.read_text())
+        payload["human_preview"] = "Tampered approval display"
+        plan_path.write_text(json.dumps(payload))
+
+        with self.assertRaisesRegex(PermissionError, "content hash"):
+            self.service.get_design_plan(preview["plan_id"])
+
+    def test_caller_boolean_cannot_replace_persisted_human_approval(self):
+        preview = self.service.preview_design_plan(self.design)
+
+        with self.assertRaisesRegex(PermissionError, "persisted desktop approval"):
+            self.service.execute_approved_plan(
+                preview["plan_id"],
+                preview["approval_hash"],
+                approved=True,
+            )
+        self.assertFalse(FakeBridge.calls)
+
     def test_approved_plan_executes_exact_compiled_sequence(self):
         preview = self.service.preview_design_plan(self.design)
+        self.service.record_human_approval(
+            preview["plan_id"],
+            preview["approval_hash"],
+        )
         result = self.service.execute_approved_plan(
             preview["plan_id"],
             preview["approval_hash"],
@@ -95,6 +136,10 @@ class PlanServiceTests(unittest.TestCase):
 
     def test_result_extraction_never_invents_values(self):
         preview = self.service.preview_design_plan(self.design)
+        self.service.record_human_approval(
+            preview["plan_id"],
+            preview["approval_hash"],
+        )
         result = self.service.execute_approved_plan(
             preview["plan_id"], preview["approval_hash"], approved=True
         )

@@ -21,7 +21,12 @@ from .cst_bridge import (
 from .cst_compiler import CompiledDesign, CompiledOperation, compile_design
 from .design_ir import DesignIR
 from .results import SimulationResult
-from .validation import ValidationReport, validate_design
+from .validation import (
+    Severity,
+    ValidationFinding,
+    ValidationReport,
+    validate_design,
+)
 from .workflow import WorkflowState, WorkflowStore
 
 
@@ -55,6 +60,15 @@ class ExecutionRecord(BaseModel):
     error: str | None = None
 
 
+class ApprovalRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plan_id: str
+    content_hash: str
+    approved_at: str
+    approved_by: str
+    consumed_at: str | None = None
+
+
 class PlanService:
     def __init__(
         self,
@@ -69,6 +83,7 @@ class PlanService:
         )
         self.plan_root = self.root / "plans"
         self.execution_root = self.root / "executions"
+        self.approval_root = self.root / "approvals"
         self.workflows = WorkflowStore(self.root / "workflows")
         self.bridge_factory = bridge_factory
 
@@ -85,11 +100,27 @@ class PlanService:
             **compile_design(design_ir).to_dict(),
         }
 
-    def preview_design_plan(self, design_ir: DesignIR) -> dict:
+    def preview_design_plan(
+        self,
+        design_ir: DesignIR,
+        *,
+        models_used: list[dict[str, Any]] | None = None,
+        model_fallbacks: list[str] | None = None,
+        blocking_reasons: list[str] | None = None,
+    ) -> dict:
         workflow = self.workflows.create()
         workflow = self.workflows.transition(workflow, WorkflowState.GEOMETRY_PLANNED)
         workflow = self.workflows.transition(workflow, WorkflowState.SIMULATION_PLANNED)
         report = validate_design(design_ir)
+        report.findings.extend(
+            ValidationFinding(
+                severity=Severity.BLOCKING_ERROR,
+                category="orchestration",
+                code="swarm.handoff_blocked",
+                message=reason[:1000],
+            )
+            for reason in blocking_reasons or []
+        )
         compiled = None if report.blocking else compile_design(design_ir)
         if report.blocking:
             workflow = self.workflows.transition(
@@ -102,12 +133,25 @@ class PlanService:
                 workflow, WorkflowState.AWAITING_APPROVAL
             )
 
-        machine_preview = _machine_preview(design_ir, report, compiled)
-        human_preview = _human_preview(design_ir, report, compiled)
+        machine_preview = _machine_preview(
+            design_ir,
+            report,
+            compiled,
+            models_used or [],
+            model_fallbacks or [],
+        )
+        human_preview = _human_preview(
+            design_ir,
+            report,
+            compiled,
+            models_used or [],
+        )
         content = {
             "design_ir": design_ir.model_dump(mode="json"),
             "validation": report.to_dict(),
             "compiled": compiled.to_dict() if compiled else None,
+            "human_preview": human_preview,
+            "machine_preview": machine_preview,
         }
         content_hash = _hash(content)
         plan = StoredPlan(
@@ -150,6 +194,57 @@ class PlanService:
             "validation": plan.validation,
         }
 
+    def record_human_approval(
+        self,
+        plan_id: str,
+        approval_hash: str,
+        *,
+        approved_by: str = "prompt2cst_desktop",
+    ) -> dict:
+        plan = self._load_plan(plan_id)
+        if not _constant_time_equal(approval_hash, plan.content_hash):
+            raise PermissionError("Approval hash does not match the immutable plan")
+        workflow = self.workflows.load(plan.workflow_id)
+        if workflow.state != WorkflowState.AWAITING_APPROVAL:
+            raise ValueError(f"Plan is not awaiting approval: {workflow.state}")
+        now = datetime.now(UTC).isoformat()
+        record = ApprovalRecord(
+            plan_id=plan_id,
+            content_hash=plan.content_hash,
+            approved_at=now,
+            approved_by=approved_by[:120],
+        )
+        self._atomic_write(
+            self.approval_root / f"{plan_id}.json",
+            record.model_dump_json(indent=2),
+        )
+        return {
+            "plan_id": plan_id,
+            "approval_hash": plan.content_hash,
+            "approved_at": now,
+            "approved_by": record.approved_by,
+        }
+
+    def invalidate_plan(self, plan_id: str, reason: str = "Design revised") -> dict:
+        plan = self._load_plan(plan_id)
+        workflow = self.workflows.load(plan.workflow_id)
+        if workflow.state == WorkflowState.AWAITING_APPROVAL:
+            workflow = self.workflows.transition(
+                workflow,
+                WorkflowState.FAILED,
+                reason[:1000],
+            )
+            return {
+                "plan_id": plan_id,
+                "invalidated": True,
+                "state": workflow.state,
+            }
+        return {
+            "plan_id": plan_id,
+            "invalidated": False,
+            "state": workflow.state,
+        }
+
     def execute_approved_plan(
         self,
         plan_id: str,
@@ -174,7 +269,19 @@ class PlanService:
         workflow = self.workflows.load(plan.workflow_id)
         if workflow.state != WorkflowState.AWAITING_APPROVAL:
             raise ValueError(f"Plan is not awaiting approval: {workflow.state}")
+        approval = self._load_approval(plan_id)
+        if not _constant_time_equal(approval.content_hash, plan.content_hash):
+            raise PermissionError(
+                "Persisted approval does not match the immutable plan"
+            )
+        if approval.consumed_at is not None:
+            raise PermissionError("Persisted approval has already been consumed")
         workflow = self.workflows.transition(workflow, WorkflowState.APPROVED)
+        approval.consumed_at = datetime.now(UTC).isoformat()
+        self._atomic_write(
+            self.approval_root / f"{plan_id}.json",
+            approval.model_dump_json(indent=2),
+        )
 
         execution_id = uuid.uuid4().hex
         now = datetime.now(UTC).isoformat()
@@ -287,10 +394,20 @@ class PlanService:
             "design_ir": plan.design_ir,
             "validation": plan.validation,
             "compiled": plan.compiled,
+            "human_preview": plan.human_preview,
+            "machine_preview": plan.machine_preview,
         }
         if not _constant_time_equal(_hash(content), plan.content_hash):
             raise PermissionError("Stored plan content hash verification failed")
         return plan
+
+    def _load_approval(self, plan_id: str) -> ApprovalRecord:
+        path = self._safe_path(self.approval_root, plan_id)
+        if not path.exists():
+            raise PermissionError(
+                "No persisted desktop approval exists for this immutable plan"
+            )
+        return ApprovalRecord.model_validate_json(path.read_text(encoding="utf-8"))
 
     def _load_execution(self, execution_id: str) -> ExecutionRecord:
         return ExecutionRecord.model_validate_json(
@@ -355,7 +472,11 @@ def _compiled_from_dict(value: dict[str, Any]) -> CompiledDesign:
 
 
 def _machine_preview(
-    design: DesignIR, report: ValidationReport, compiled: CompiledDesign | None
+    design: DesignIR,
+    report: ValidationReport,
+    compiled: CompiledDesign | None,
+    models_used: list[dict[str, Any]] | None = None,
+    model_fallbacks: list[str] | None = None,
 ) -> dict:
     return {
         "schema_version": design.schema_version,
@@ -386,14 +507,17 @@ def _machine_preview(
         "estimated_operation_count": len(compiled.operations) if compiled else 0,
         "estimated_mesh_count": report.estimated_mesh_cells,
         "simulation_case_count": report.sweep_case_count,
-        "models_used": [],
-        "model_fallbacks": [],
+        "models_used": models_used or [],
+        "model_fallbacks": model_fallbacks or [],
         "tool_call_count": 1,
     }
 
 
 def _human_preview(
-    design: DesignIR, report: ValidationReport, compiled: CompiledDesign | None
+    design: DesignIR,
+    report: ValidationReport,
+    compiled: CompiledDesign | None,
+    models_used: list[dict[str, Any]] | None = None,
 ) -> str:
     findings = "\n".join(
         f"- [{item.severity}] {item.code}: {item.message}" for item in report.findings
@@ -402,6 +526,14 @@ def _human_preview(
         "\n".join(f"{item.index}. {item.label}" for item in compiled.operations)
         if compiled
         else "Compilation blocked."
+    )
+    model_lines = (
+        "\n".join(
+            f"- {item.get('phase', 'unknown')}: "
+            f"{item.get('role', 'unknown')} -> {item.get('model', 'unknown')}"
+            for item in models_used or []
+        )
+        or "No model provenance supplied."
     )
     return "\n".join(
         [
@@ -431,7 +563,7 @@ def _human_preview(
             operation_lines,
             "",
             "## Model activity",
-            "Model-role provenance is present only when supplied by the orchestrator.",
+            model_lines,
             "",
             "## Execution activity",
             "Read-only preview; no CST operation has executed.",

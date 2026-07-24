@@ -28,6 +28,93 @@ FAMILY_OPTIONS = [
     ),
 ]
 
+PHASE_OPTIONS = [
+    (
+        "Requirements",
+        "requirements",
+        "Parse intent, constraints, topology and missing details.",
+    ),
+    (
+        "Calculations",
+        "calculations",
+        "Calculate RF dimensions, assumptions and first-pass formulas.",
+    ),
+    (
+        "Parameters",
+        "parameters",
+        "Resolve named CST parameters, ranges and units.",
+    ),
+    (
+        "Modeling",
+        "modeling",
+        "Plan geometry, materials, feed objects and operations.",
+    ),
+    (
+        "Simulation",
+        "simulation",
+        "Plan boundaries, solver, sweeps, mesh and monitors.",
+    ),
+    (
+        "Validation",
+        "validation",
+        "Critique the plan before any CST write is possible.",
+    ),
+    (
+        "Preview",
+        "preview",
+        "Compile a non-writing DesignIR/CST operation preview.",
+    ),
+]
+
+PHASE_TO_ROLE = {
+    "requirements": "requirements_model",
+    "calculations": "calculations_model",
+    "parameters": "parameters_model",
+    "modeling": "geometry_model",
+    "simulation": "simulation_model",
+    "validation": "critic_model",
+    "preview": "swarm_coordinator",
+    "build": "deterministic_executor",
+}
+
+PHASE_INSTRUCTIONS = {
+    "requirements": (
+        "Run only the requirements phase. Extract the requested antenna goal, "
+        "frequency, materials, feed, solver needs and missing information. "
+        "Do not build or write to CST."
+    ),
+    "calculations": (
+        "Run only the calculations phase. Use deterministic RF formulas and "
+        "show assumptions, units and derived dimensions. Do not build or write "
+        "to CST."
+    ),
+    "parameters": (
+        "Run only the parameter-setting phase. Produce named CST parameters, "
+        "safe ranges and unit choices. Do not build or write to CST."
+    ),
+    "modeling": (
+        "Run only the modeling phase. Plan geometry, materials, booleans, "
+        "ports and named objects in a reviewable way. Do not build or write "
+        "to CST."
+    ),
+    "simulation": (
+        "Run only the simulation-planning phase. Define solver, boundaries, "
+        "sweeps, mesh and monitors, but do not run the solver or write to CST."
+    ),
+    "validation": (
+        "Run only the validation phase. Find blocking issues, unsupported "
+        "capabilities and risky assumptions before preview/build."
+    ),
+    "preview": (
+        "Run the preview phase. Validate and compile a non-writing preview "
+        "that the user can inspect before build."
+    ),
+    "build": (
+        "Run the build phase only from an acceptable validated preview. The "
+        "desktop must still request interactive approval before any CST write."
+    ),
+}
+
 
 EXAMPLE_PROMPTS = {
     "auto": (
@@ -60,12 +147,17 @@ def compose_user_request(
     prompt: str,
     family_id: str,
     mode: str,
+    phase: str = "preview",
 ) -> str:
     cleaned = prompt.strip()
     if not cleaned:
         raise ValueError("Enter an antenna request")
     if mode not in {"preview", "build"}:
         raise ValueError("mode must be preview or build")
+    if phase not in PHASE_INSTRUCTIONS:
+        raise ValueError("unknown execution phase")
+    if mode == "build" and phase != "build":
+        phase = "build"
 
     family_hint = (
         "Choose the correct supported antenna family from the capability catalog."
@@ -81,4 +173,22 @@ def compose_user_request(
             "any CST-writing tool executes."
         )
     )
-    return f"{cleaned}\n\n{family_hint}\n{action}"
+    return f"{cleaned}\n\n{family_hint}\n{PHASE_INSTRUCTIONS[phase]}\n{action}"
+
+
+def compose_swarm_request(prompt: str, family_id: str) -> str:
+    cleaned = prompt.strip()
+    if not cleaned:
+        raise ValueError("Enter an antenna request")
+    family_hint = (
+        "Requested antenna family: auto detect."
+        if family_id == "auto"
+        else f"Requested antenna family: {family_id}."
+    )
+    return f"{cleaned}\n\n{family_hint}"
+
+
+def role_for_phase(phase: str) -> str:
+    if phase not in PHASE_TO_ROLE:
+        raise ValueError("unknown execution phase")
+    return PHASE_TO_ROLE[phase]

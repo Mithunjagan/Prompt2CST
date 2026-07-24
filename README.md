@@ -230,7 +230,7 @@ repository’s local `outputs` directory.
 | Python | CPython 3.11 x64; Python 3.12+ is not accepted by this release |
 | Internet | Required during dependency installation and for OpenRouter requests |
 | OpenRouter account | Required for an API key and model access |
-| Tool-capable model | The model must support OpenRouter tool/function calling |
+| Structured/tool model | Planning roles should support structured JSON output; legacy MCP use also needs tool/function calling |
 | Disk space | Allow approximately 1 GB; the current development `.venv` is about 713 MB |
 | PowerShell | Windows PowerShell 5.1 or PowerShell 7 |
 
@@ -407,40 +407,50 @@ input/output; it is not a normal interactive command prompt.
 | Area | Purpose |
 |---|---|
 | OpenRouter key | Session-only credential entry with eye/eye-off visibility toggle |
-| Tool-capable model | Editable model ID and refreshed OpenRouter model list |
+| Structured/tool model | Editable model ID and refreshed OpenRouter list for structured-output or tool-capable models |
+| Execution phase | Runs the specialist swarm through requirements, calculations, parameters, modeling, simulation, validation, or preview |
 | Antenna family | Auto-detect or force one supported family |
 | Requirements | Natural-language RF, geometry, material, feed, sweep, and monitor request |
-| Preview design | Forces a non-writing request |
-| Build in CST | Requests a build but still cannot bypass the approval sheet |
+| Prompt history | Saved conversation turns with session, phase, response, and activity until Clear is pressed |
+| Preview design | Runs typed specialist handoffs and creates a non-writing immutable DesignIR preview |
+| Build in CST | Executes only the active preview's exact plan ID and hash after approval; no planning model is called |
 | Assistant tab | Markdown-formatted final model response |
-| Activity tab | Model, family, mode, MCP startup, tool calls, and errors |
-| Copy / Clear | Copies the active review tab or clears current in-memory results |
+| Activity tab | Model, role, phase, family, mode, MCP startup, tool calls, and errors |
+| Copy / Clear | Copies the active review tab or clears current results and saved prompt history |
 
 ### Recommended design workflow
 
 1. Enter the OpenRouter key.
-2. Press **Refresh** or type a known tool-capable model ID.
-3. Select the antenna family.
-4. Press **Use example** or enter a complete request.
-5. Include:
+2. Press **Refresh** or type a model ID that supports structured JSON output.
+3. Assign the selected model to all roles, or use **Models** to assign separate
+   requirements, calculations, parameters, geometry, simulation, and critic
+   models.
+4. Select the antenna family and execution phase.
+5. Press **Use example** or enter a complete request.
+6. Include:
    - target frequency;
    - required dimensions or design constraints;
    - conductor and substrate information;
    - feed and impedance;
    - frequency sweep;
    - boundary and monitor requirements.
-6. Press **Preview design**.
-7. Read the **Assistant** response.
-8. Inspect the **Activity** trace for the selected model and tools.
-9. Correct the request if dimensions, assumptions, or warnings are unsuitable.
-10. Press **Build in CST** only when the preview is acceptable.
-11. Review the approval sheet:
-    - exact build tool;
-    - complete proposed arguments;
-    - calculated non-writing preview;
-    - project name and overwrite flag.
-12. Choose **Deny build** or **Approve CST build**.
-13. Open the saved `.cst` project and inspect its History List and geometry.
+7. Run early phases independently when you want requirements, calculations,
+   parameters, modeling, simulation planning, or validation before preview.
+   Keeping the prompt unchanged resumes from the last completed checkpoint;
+   editing it starts a new revision and revokes the prior preview.
+8. Press **Preview design**.
+9. Read the **Assistant** response.
+10. Inspect the **Activity** trace for every specialist handoff, actual model,
+    fallback, deterministic calculation, validation event, and preview ID.
+11. Correct the request if dimensions, assumptions, or warnings are unsuitable.
+12. Press **Build in CST** only when the preview is acceptable.
+13. Review the approval sheet:
+    - `execute_approved_plan`;
+    - exact immutable plan ID;
+    - exact SHA-256 approval hash;
+    - complete calculated and compiled non-writing preview.
+14. Choose **Deny build** or **Approve CST build**.
+15. Open the saved `.cst` project and inspect its History List and geometry.
 
 Ready-to-use prompts are in [DEMO_PROMPTS.md](DEMO_PROMPTS.md).
 
@@ -474,10 +484,13 @@ Set `PROMPT2CST_OUTPUT_DIR` to override either default.
 | Item | Persisted? | Location |
 |---|---:|---|
 | Approved CST project | Yes | Configured output directory as `<sanitized-name>.cst` |
+| Prompt history | Yes | `.prompt2cst-state\prompt_history.json` below the output directory |
+| Swarm conversations and phase artifacts | Yes | `.prompt2cst-state\swarm_sessions\*.json` |
+| Immutable plans and workflow state | Yes | `.prompt2cst-state\plans\` and `.prompt2cst-state\workflows\` |
 | OpenRouter key | No | Process memory only |
-| Assistant response | No | Current GUI session only |
-| Activity log | No | Current GUI session only |
-| Preview calculations | No separate file | Displayed in the GUI/model exchange |
+| Assistant response | Yes, per prompt run | Saved in prompt history until Clear |
+| Activity log | Yes, per prompt run | Saved in prompt history until Clear |
+| Preview calculations | Yes | Saved in the active swarm session and immutable preview |
 | Screenshots | Only if you take them | User-selected location |
 
 Project names are reduced to letters, numbers, `_`, and `-`, then limited to 80
@@ -555,28 +568,29 @@ and degenerate ports are rejected.
 | `cst_status` | Read-only | Check Windows/CST registration and optionally test a live COM connection |
 | `antenna_catalog` | Read-only | Return supported families, primitives, and unsupported capabilities |
 | `preview_test_brick` | Preview | Return a harmless PEC probe-brick history command |
-| `build_test_brick` | Write | Create the known-good probe project after confirmation |
+| `build_test_brick` | Compatibility preview | Adapt the probe brick to DesignIR and store an immutable plan; never writes directly |
 | `preview_rectangular_patch` | Preview | Calculate first-pass rectangular patch dimensions |
-| `build_rectangular_patch` | Write | Create patch geometry and optional boundaries |
+| `build_rectangular_patch` | Compatibility preview | Adapt patch inputs to an immutable DesignIR plan |
 | `preview_wire_monopole` | Preview | Validate and preview monopole, ground, port, boundaries, and monitor |
-| `build_wire_monopole` | Write | Create the monopole project |
+| `build_wire_monopole` | Compatibility preview | Adapt monopole inputs to an immutable DesignIR plan |
 | `preview_center_fed_dipole` | Preview | Validate and preview the two-arm dipole |
-| `build_center_fed_dipole` | Write | Create the dipole through the parametric builder |
+| `build_center_fed_dipole` | Compatibility preview | Adapt dipole inputs to an immutable DesignIR plan |
 | `preview_parametric_antenna` | Preview | Validate and preview a custom primitive specification |
-| `build_parametric_antenna` | Write | Create the validated custom project |
+| `build_parametric_antenna` | Compatibility preview | Adapt the validated custom specification to an immutable DesignIR plan |
 | `validate_design_plan` | Read-only | Run deterministic validation for one complete DesignIR |
 | `compile_design_plan` | Read-only | Compile a valid DesignIR into deterministic CST operations |
 | `preview_design_plan` | Preview | Validate, compile, hash, and immutably store one batched plan |
 | `get_design_plan` | Read-only | Retrieve the exact immutable approval preview |
-| `execute_approved_plan` | Write | Execute an unchanged approved plan and persist operation progress |
+| `execute_approved_plan` | Write | Execute an unchanged plan only when a persisted desktop approval record and exact hash both exist |
 | `get_execution_status` | Read-only | Read persisted execution state and completed operations |
 | `cancel_execution` | Control | Request cancellation between deterministic CST operations |
 | `extract_simulation_results` | Read-only | Return normalized values or honest unavailable-output records |
 
-Six tools are classified as writing tools. Legacy builders map to their
-family preview and use `confirm=true`. `execute_approved_plan` maps to the
-stored immutable preview and uses `approved=true` only after the desktop
-approval callback returns true.
+Only `execute_approved_plan` can reach `CSTBridge`. The five legacy `build_*`
+names remain as compatibility wrappers, but they now adapt inputs through
+DesignIR and return immutable previews regardless of `confirm`. After the
+native approval callback, the desktop writes a persisted approval record;
+`approved=true` alone cannot authorize execution.
 
 ## Architecture
 
@@ -587,44 +601,42 @@ flowchart TB
     User(["RF designer"])
     QML["Qt Quick / QML workspace<br/>desktop process"]
     Controller["Prompt2CSTController"]
-    Worker["Background Qt worker"]
-    Agent["OpenRouterAgent<br/>tool loop + safety policy"]
+    Worker["Background swarm worker"]
+    Session["Persistent SwarmSession<br/>messages + typed artifacts"]
+    Coordinator["SwarmCoordinator<br/>ordered handoffs"]
+    Specialists["Requirements · calculations · parameters<br/>geometry · simulation · critic"]
     OR["OpenRouter<br/>Chat Completions API"]
     Approval{"Native approval sheet"}
     Review["Assistant + Activity review"]
-    Client["MCP client<br/>local stdio only"]
-    Server["FastMCP server<br/>20 typed tools"]
-    Catalog["Capability catalog"]
-    Design["RF calculations"]
-    Schema["Strict Pydantic schemas"]
-    Macros["Deterministic CST history"]
+    Calc["Deterministic RF calculations"]
+    Validate["Deterministic validation"]
+    IR["Strict DesignIR"]
+    Plan["PlanService<br/>immutable preview + hash"]
+    Compiler["Deterministic CST compiler"]
     Bridge["CSTBridge<br/>Windows COM boundary"]
     COM["CSTStudio.Application.2026"]
     Project["Local .cst project<br/>solver not started"]
 
-    User --> QML --> Controller --> Worker --> Agent
-    Agent <--> OR
-    Agent <--> Client <--> Server
-    Agent -->|"write proposed"| Approval
-    Approval -->|"approve or deny"| Agent
-    Agent --> Review --> QML
-
-    Server --> Catalog
-    Server --> Design
-    Server --> Schema
-    Design --> Macros
-    Schema --> Macros
-    Server -->|"confirm=true only after approval"| Bridge
-    Macros --> Bridge --> COM --> Project
+    User --> QML --> Controller --> Worker --> Coordinator
+    Coordinator <--> Session
+    Coordinator <--> Specialists <--> OR
+    Coordinator --> Calc --> IR
+    Specialists --> IR --> Validate --> Plan
+    Plan --> Compiler
+    Plan -->|"exact plan + hash"| Approval
+    Approval -->|"approve"| Bridge
+    Compiler --> Bridge --> COM --> Project
+    Approval -->|"deny"| Review
     Project --> Review
+    Coordinator --> Review --> QML
 
     classDef ui fill:#10283d,stroke:#55d7ff,color:#f4f9ff;
     classDef ai fill:#252044,stroke:#9e8cff,color:#f4f9ff;
     classDef safe fill:#12352f,stroke:#55e6a5,color:#f4f9ff;
     classDef write fill:#3b2918,stroke:#ffb86b,color:#f4f9ff;
-    class QML,Controller,Worker,Review ui;
-    class Agent,OR ai;
-    class Client,Server,Catalog,Design,Schema,Macros safe;
+    class QML,Controller,Worker,Session,Review ui;
+    class Coordinator,Specialists,OR ai;
+    class Calc,Validate,IR,Plan,Compiler safe;
     class Approval,Bridge,COM,Project write;
 ```
 
@@ -634,13 +646,14 @@ flowchart TB
 |---|---|---|
 | Presentation | `qml/Main.qml`, `GlassPanel.qml`, `LiquidButton.qml`, `ChevronIndicator.qml` | Responsive desktop layout, inputs, review tabs, approval dialog, visual feedback |
 | Desktop controller | `gui.py`, `ui_logic.py` | Qt properties/signals, worker lifetime, request composition, error display, approval synchronization |
-| Agent orchestration | `agent.py` | OpenRouter requests, MCP discovery, tool loop, timeouts, preview-before-write, approval enforcement |
+| Swarm orchestration | `swarm.py`, `orchestration.py` | Typed specialist artifacts, ordered handoffs, role routing, fallbacks, accounting, revision invalidation |
+| Compatibility agent | `agent.py` | Legacy OpenRouter/MCP tool loop retained for non-desktop compatibility |
 | MCP interface | `server.py` | 20 typed tools, batched plans, confirmation checks, preview/build separation |
 | Universal design model | `design_ir.py`, `adapters.py` | Strict DesignIR 1.0, safe expressions, legacy-family conversion |
 | Deterministic validation | `validation.py`, `capabilities.py` | Schema, dependency, geometry, material, port, simulation, mesh and sweep gates |
 | CST compiler | `cst_compiler/` | Stable History List operation generation organized by responsibility |
 | Plan lifecycle | `plan_service.py`, `workflow.py` | Persistent state machine, immutable previews, approval hashes and progress |
-| Model roles | `orchestration.py` | Provider protocol, routing, fallbacks, retries, accounting and health |
+| Conversation history | `session_history.py`, `swarm.py` | Prompt summaries plus persistent messages, artifacts, DesignIR, plan references, and execution state |
 | Results | `results.py` | Typed SimulationResult values with explicit provenance |
 | Capability truth | `catalog.py` | Supported families, primitives, and explicit unsupported features |
 | RF calculations | `design.py` | Patch, monopole, and dipole inputs, validation, and calculated dimensions |
@@ -651,7 +664,8 @@ flowchart TB
 
 The desktop application launches the MCP server as a local child process using
 the same Python interpreter. It does not expose an HTTP server or listen on a
-network port.
+network port. Prompt runs are persisted as local state records so the desktop
+can behave like a phase-by-phase chat until the user presses **Clear**.
 
 ## Application state machine
 
@@ -666,21 +680,21 @@ stateDiagram-v2
     RefreshingModels --> Ready: Models loaded
     RefreshingModels --> Failed: OpenRouter/model error
 
-    Ready --> Previewing: Preview design
-    Previewing --> ReviewReady: Assistant response
-    Previewing --> Failed: Validation/API/MCP error
+    Ready --> SwarmPlanning: Run selected phase
+    SwarmPlanning --> ReviewReady: Typed handoffs complete
+    SwarmPlanning --> Failed: Schema/provider/validation error
+    ReviewReady --> SwarmPlanning: New chat prompt / revision
+    SwarmPlanning --> PreviewReady: Immutable preview completed
 
-    Ready --> PreparingBuild: Build in CST
-    PreparingBuild --> AwaitingApproval: Write tool proposed
-    AwaitingApproval --> PreparingBuild: Deny / return user_denied
-    AwaitingApproval --> WritingCST: Approve / inject confirm=true
-    WritingCST --> PreparingBuild: Tool result returned
-    PreparingBuild --> Completed: Final assistant response
-    PreparingBuild --> Failed: Validation/API/MCP/COM error
+    PreviewReady --> AwaitingApproval: Build in CST
+    AwaitingApproval --> PreviewReady: Deny / no write
+    AwaitingApproval --> WritingCST: Approve exact plan + hash
+    WritingCST --> Completed: Compiled operations completed
     WritingCST --> Failed: COM or filesystem error
 
-    ReviewReady --> Ready: Clear or start another request
-    Completed --> Ready: Clear or start another request
+    ReviewReady --> Ready: Clear
+    PreviewReady --> Ready: Clear
+    Completed --> Ready: Clear or new prompt
     Failed --> Ready: Correct input and retry
 
     AwaitingApproval --> Closing: Window closes
@@ -693,7 +707,7 @@ stateDiagram-v2
 | Visible status | Internal meaning | Permitted next action |
 |---|---|---|
 | `Ready` | No worker is active | Refresh, preview, or build |
-| `Refreshing tool-capable models…` | OpenRouter model metadata is loading | Wait or inspect an error |
+| `Refreshing structured/tool models…` | OpenRouter model metadata is loading | Wait or inspect an error |
 | `Generating safe preview…` | Preview-mode agent loop is active | Wait for Assistant/Activity |
 | `Preparing CST build…` | Build-mode agent loop is active | Wait for preview/tool proposal |
 | `Review required before CST write` | Worker is blocked on the approval sheet | Approve or deny |
@@ -711,24 +725,27 @@ sequenceDiagram
     actor U as User
     participant UI as QML UI
     participant C as Qt Controller
-    participant A as OpenRouterAgent
+    participant S as SwarmCoordinator
     participant O as OpenRouter
-    participant M as Local MCP Server
+    participant D as Deterministic services
+    participant P as PlanService
 
-    U->>UI: Enter key, model, family, requirements
+    U->>UI: Enter key, role models, family, requirements
     U->>UI: Preview design
-    UI->>C: runAgent(..., mode="preview")
-    C->>C: Compose preview-only safety instruction
-    C->>A: Start worker request
-    A->>M: Start stdio server and list 12 tools
-    A->>O: Prompt + typed tool schemas
-    O-->>A: Preview tool call
-    A->>M: Call typed preview tool
-    M->>M: Validate and calculate
-    M-->>A: write_performed=false + design
-    A->>O: Return tool result
-    O-->>A: Readable final response
-    A-->>C: Assistant text + activity
+    UI->>C: runAgent(..., mode="preview", phase)
+    C->>S: Continue persistent session revision
+    S->>O: RequirementsArtifact
+    O-->>S: Strict requirements
+    S->>D: RF calculations
+    D-->>S: Formula records with units
+    S->>O: Calculations, parameters, geometry, simulation
+    O-->>S: Strict specialist artifacts
+    S->>D: Validate canonical DesignIR
+    S->>O: Critic explanation
+    O-->>S: CriticArtifact
+    S->>P: Compile and store immutable preview
+    P-->>S: plan_id + SHA-256 + write_performed=false
+    S-->>C: Assistant text + model/deterministic activity
     C-->>UI: Render Assistant and Activity tabs
 ```
 
@@ -738,31 +755,31 @@ sequenceDiagram
 sequenceDiagram
     actor U as User
     participant UI as QML UI
-    participant A as OpenRouterAgent
-    participant M as Local MCP Server
+    participant QC as Qt Controller
+    participant S as SwarmCoordinator
+    participant P as PlanService
     participant B as CSTBridge
-    participant C as CST 2026
+    participant CST as CST 2026
 
     U->>UI: Build in CST
-    UI->>A: Build-mode request
-    A->>M: Ensure matching preview exists
-    M-->>A: Calculated non-writing preview
-    A-->>UI: Approval request(tool, arguments, preview)
+    UI->>QC: Build active swarm session
+    QC->>S: build(session_id)
+    S->>P: Load exact plan_id + approval_hash
+    P-->>UI: Approval request with stored preview
     alt User denies
         U->>UI: Deny build
-        UI-->>A: approved=false
-        A-->>UI: user_denied with write_performed=false
+        UI-->>S: approved=false
+        S-->>UI: write_performed=false
     else User approves
         U->>UI: Approve CST build
-        UI-->>A: approved=true
-        A->>A: Inject confirm=true
-        A->>M: Call typed build tool
-        M->>M: Revalidate arguments/specification
-        M->>B: Create requested supported project
-        B->>C: Dispatch COM + AddToHistory + SaveAs
-        C-->>B: Project saved
-        B-->>A: project_path + solver_run=false
-        A-->>UI: Completion response and activity
+        UI-->>S: approved=true
+        S->>P: execute_approved_plan(plan_id, hash)
+        P->>B: Deterministic compiled operations
+        B->>CST: Dispatch COM + AddToHistory + SaveAs
+        CST-->>B: Project saved
+        B-->>P: project_path + solver_run=false
+        P-->>S: Structured execution result
+        S-->>UI: Completion response and activity
     end
 ```
 
@@ -770,49 +787,46 @@ sequenceDiagram
 
 1. Invalid GUI input is rejected before a worker starts.
 2. OpenRouter HTTP failures are shown with status and response details.
-3. MCP startup, discovery, and calls have timeouts.
-4. Tool arguments must decode to a JSON object.
-5. Typed calculations and Pydantic models reject invalid ranges and fields.
-6. A write request is automatically previewed if no matching preview is cached.
-7. Denial returns `write_performed=false`; the build tool is never called.
-8. COM and filesystem exceptions appear in the Activity tab and error toast.
-9. Existing projects raise an error unless overwrite was proposed and approved.
+3. Each specialist response must validate against its strict Pydantic artifact.
+4. Typed calculations reject invalid ranges and remain authoritative for arithmetic.
+5. Deterministic validation blocks unsafe or unsupported DesignIR.
+6. Build is disabled until the active session owns a non-blocking immutable preview.
+7. Every new chat revision revokes the prior awaiting-approval plan.
+8. Denial returns `write_performed=false`; the CST bridge is never called.
+9. COM and filesystem exceptions appear in the Activity tab and error toast.
 
 ## Runtime flow logs
 
 The **Activity** tab is a compact execution trace, not a hidden debug console.
-Every request starts with the selected model, family, and mode, then appends
-worker and agent events in execution order.
+Every request records the swarm session/revision, specialist role, actual
+provider/model, fallbacks, deterministic calculations, validation, immutable
+preview, approval, and CST execution events.
 
 ### Log pipeline
 
 ```mermaid
 flowchart LR
-    Header["Session header<br/>model · family · mode"]
-    Worker["GUI worker started"]
-    MCPStart["Local MCP server started"]
-    Discovery["12 tools discovered"]
-    ModelStep["OpenRouter step n / 8"]
-    Tool{"Tool requested"}
-    Preview["Preview tool call"]
-    Gate{"Write tool?"}
+    Header["Session header<br/>session · revision · target phase"]
+    Worker["Swarm worker started"]
+    Roles["Typed specialist handoffs"]
+    Calc["Deterministic calculations"]
+    Validation["Deterministic validation"]
+    Preview["Immutable plan + hash"]
     Approval["Approval sheet"]
-    Denied["user_denied<br/>write_performed=false"]
-    Write["Confirmed build tool"]
+    Denied["denied<br/>write_performed=false"]
+    Write["Exact compiled operation sequence"]
     Result["Assistant response<br/>or exact error"]
 
-    Header --> Worker --> MCPStart --> Discovery --> ModelStep --> Tool
-    Tool -->|"preview/status/catalog"| Preview --> ModelStep
-    Tool -->|"build"| Gate --> Approval
-    Approval -->|"deny"| Denied --> ModelStep
-    Approval -->|"approve"| Write --> ModelStep
-    ModelStep -->|"no more tool calls"| Result
+    Header --> Worker --> Roles --> Calc --> Validation --> Preview --> Result
+    Preview -->|"Build"| Approval
+    Approval -->|"deny"| Denied --> Result
+    Approval -->|"approve"| Write --> Result
 
     classDef trace fill:#10283d,stroke:#55d7ff,color:#f4f9ff;
     classDef gate fill:#252044,stroke:#9e8cff,color:#f4f9ff;
     classDef denied fill:#3d2029,stroke:#ff7b8a,color:#f4f9ff;
     classDef write fill:#12352f,stroke:#55e6a5,color:#f4f9ff;
-    class Header,Worker,MCPStart,Discovery,ModelStep,Tool,Preview,Result trace;
+    class Header,Worker,Roles,Calc,Validation,Preview,Result trace;
     class Gate,Approval gate;
     class Denied denied;
     class Write write;
@@ -821,49 +835,36 @@ flowchart LR
 ### Example: preview trace
 
 ```text
-Model: cohere/north-mini-code:free
-Family: wire_monopole
-Mode: preview
-
-[agent] GUI worker started
-[agent] Starting local Prompt2CST MCP server
-[agent] MCP initialized; discovering tools
-[agent] Discovered 20 MCP tools
-[agent] OpenRouter request 1/8 using cohere/north-mini-code:free
-[agent] Calling MCP tool: preview_wire_monopole
-[agent] OpenRouter request 2/8 using cohere/north-mini-code:free
+[swarm] session=<id> revision=1
+[model] phase=requirements role=requirements_model provider=openrouter model=<model>
+[model] phase=calculations role=calculations_model provider=openrouter model=<model>
+[deterministic] completed 4 RF formulas
+[model] phase=parameters role=parameters_model provider=openrouter model=<model>
+[model] phase=modeling role=geometry_model provider=openrouter model=<model>
+[model] phase=simulation role=simulation_model provider=openrouter model=<model>
+[deterministic] validation passed
+[model] phase=validation role=critic_model provider=openrouter model=<model>
+[preview] plan=<id> approval_allowed=true write_performed=false
 ```
 
 ### Example: approved build trace
 
 ```text
-Model: <selected-tool-capable-model>
-Family: center_fed_dipole
-Mode: build
-
-[agent] GUI worker started
-[agent] Starting local Prompt2CST MCP server
-[agent] MCP initialized; discovering tools
-[agent] Discovered 20 MCP tools
-[agent] OpenRouter request 1/8 using <selected-tool-capable-model>
-[agent] Previewing before write: preview_center_fed_dipole
-
 UI status: Review required before CST write
+Tool: execute_approved_plan
+Arguments: plan_id=<id>, approval_hash=<sha256>
 User action: Approve CST build
 UI status: CST build approved…
-
-[agent] Calling MCP tool: build_center_fed_dipole
-[agent] OpenRouter request 2/8 using <selected-tool-capable-model>
+[cst] execution <id>: COMPLETED
 ```
 
 ### Example: denied write
 
 ```text
-[agent] Previewing before write: preview_parametric_antenna
 UI status: Review required before CST write
 User action: Deny build
-[agent] User denied CST write: build_parametric_antenna
-Tool result: {"status":"user_denied","write_performed":false}
+[approval] user denied CST execution
+Result: APPROVAL_DENIED, write_performed=false
 ```
 
 ### Reading a failure
@@ -885,8 +886,18 @@ No API key is written into the Activity log by Prompt2CST.
 
 ### Controls implemented in code
 
+- Desktop planning models receive strict response schemas and no CST-writing
+  tools.
+- Requirements, calculations, parameters, modeling, simulation, and critique
+  are separate role-routed handoffs with persisted provenance.
+- RF arithmetic, validation, compilation, preview hashing, and execution are
+  deterministic services.
+- Build makes zero model calls and executes only the current session's exact
+  immutable plan ID and SHA-256 hash.
+- A new conversation revision revokes the prior plan's awaiting-approval state.
 - No general shell, Python, VBA, or arbitrary-code MCP tool.
-- Explicit set of five known write tools.
+- The legacy MCP compatibility agent retains an explicit set of known write
+  tools and preview mappings; the desktop swarm does not use that write path.
 - One-to-one mapping from each write tool to its preview tool.
 - Preview arguments remove project name, overwrite, confirmation, and
   build-only switches.
@@ -1160,17 +1171,18 @@ the old project, or approve a build whose visible arguments explicitly contain
 ### OpenRouter HTTP 429
 
 The selected model or account is rate-limited. Wait, refresh the model list, or
-choose another tool-capable model.
+assign another structured-output model to the affected specialist role.
 
-### The model answers without using tools
+### A model rejects strict JSON schema output
 
-Tool-capable metadata does not guarantee good tool use. Try a stronger model,
-state the antenna family and required preview explicitly, and inspect the
-Activity tab.
+The provider first requests strict JSON Schema, then retries a rejected format
+with JSON Object mode while retaining strict local Pydantic validation. If both
+fail, assign a stronger structured-output model or configure a role fallback
+and inspect the exact role/model error in Activity.
 
 ### The model ID is no longer available
 
-Press **Refresh** and choose a current tool-capable model. The default free
+Press **Refresh** and choose a current structured-output or tool model. The default free
 model is only an initial value, not a guaranteed permanent service.
 
 ### The preview works but no `.cst` file appears
@@ -1268,6 +1280,8 @@ projects.
 | `src/prompt2cst/validation.py` | Deterministic validation findings and severity policy |
 | `src/prompt2cst/adapters.py` | Existing-family and custom-parametric DesignIR adapters |
 | `src/prompt2cst/orchestration.py` | Model provider interface, role router, retries, fallbacks and health |
+| `src/prompt2cst/session_history.py` | Local prompt-run history persisted until the desktop Clear action |
+| `src/prompt2cst/swarm.py` | Specialist artifacts, conversation sessions, ordered handoffs, deterministic phase gates, immutable preview binding and build execution |
 | `src/prompt2cst/workflow.py` | Persistent explicit workflow state machine |
 | `src/prompt2cst/plan_service.py` | Batched preview, immutable storage, hashing, execution and cancellation |
 | `src/prompt2cst/results.py` | SimulationResult schema and provenance-safe normalization |
@@ -1278,7 +1292,7 @@ projects.
 
 | Path | Purpose |
 |---|---|
-| `src/prompt2cst/qml/Main.qml` | Main responsive workspace, key/model inputs, composer, review tabs, approval dialog, errors |
+| `src/prompt2cst/qml/Main.qml` | Main responsive workspace, key/model inputs, phase selector, prompt history, composer, review tabs, approval dialog, errors |
 | `src/prompt2cst/qml/GlassPanel.qml` | Reusable translucent panel surface |
 | `src/prompt2cst/qml/LiquidButton.qml` | Reusable centered, animated button |
 | `src/prompt2cst/qml/ChevronIndicator.qml` | DPI-independent drawn dropdown chevron |
@@ -1296,8 +1310,11 @@ projects.
 | `tests/test_ui_logic.py` | Preview/build prompt boundaries and empty-request rejection |
 | `tests/test_calculations.py` | RF formulas, unit conversion and engineering recommendations |
 | `tests/test_design_ir.py` | Safe expressions, adapters, validation, booleans, transforms and determinism |
+| `tests/test_gui_controller.py` | History prompt restoration, Clear behavior and pending-plan invalidation |
 | `tests/test_orchestration.py` | Model fallback, structured-output rejection and secret redaction |
 | `tests/test_plan_service.py` | Batched preview, immutable hashes, execution progress and honest results |
+| `tests/test_session_history.py` | Prompt-run persistence, ordering, cap and Clear behavior |
+| `tests/test_swarm.py` | Specialist order, deterministic calculations, revision invalidation, exact-plan build, denial and session persistence |
 
 ### Generated, private, and local-only paths
 

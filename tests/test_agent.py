@@ -16,12 +16,11 @@ from prompt2cst.agent import (
 
 
 class FakeResponse:
-    is_success = True
-    status_code = 200
-    text = ""
-
-    def __init__(self, payload):
+    def __init__(self, payload, is_success=True, status_code=200, text=""):
         self._payload = payload
+        self.is_success = is_success
+        self.status_code = status_code
+        self.text = text
 
     def json(self):
         return self._payload
@@ -30,6 +29,7 @@ class FakeResponse:
 class FakeHTTPClient:
     def __init__(self, responses):
         self.responses = iter(responses)
+        self.models = []
 
     async def __aenter__(self):
         return self
@@ -37,7 +37,8 @@ class FakeHTTPClient:
     async def __aexit__(self, _type, _value, _traceback):
         return None
 
-    async def post(self, *_args, **_kwargs):
+    async def post(self, *_args, **kwargs):
+        self.models.append(kwargs["json"]["model"])
         return FakeResponse(next(self.responses))
 
 
@@ -139,11 +140,19 @@ class AgentSafetyTests(unittest.TestCase):
                     "id": "vendor/tool-and-json",
                     "supported_parameters": ["tools", "structured_outputs"],
                 },
+                {
+                    "id": "vendor/structured-only",
+                    "supported_parameters": ["structured_outputs"],
+                },
             ]
         }
         self.assertEqual(
             filter_tool_capable_models(payload),
-            ["vendor/tool-and-json", "vendor/tool-model"],
+            [
+                "vendor/structured-only",
+                "vendor/tool-and-json",
+                "vendor/tool-model",
+            ],
         )
 
     def test_mcp_schema_becomes_openrouter_function(self):
@@ -293,6 +302,40 @@ class AgentLoopSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(session.calls[1][1]["confirm"])
         self.assertEqual(approval_requests[0][0], "build_test_brick")
         self.assertFalse(approval_requests[0][2]["write_performed"])
+
+    async def test_model_candidate_fallback_is_attempted(self):
+        client = FakeHTTPClient(
+            [
+                {"error": {"message": "rate limited"}},
+                {"choices": [{"message": {"content": "ok"}}]},
+            ]
+        )
+
+        def fake_response(payload):
+            if "error" in payload:
+                return FakeResponse(payload, is_success=False, status_code=429)
+            return FakeResponse(payload)
+
+        client.post = lambda *_args, **kwargs: _async_response(
+            client,
+            kwargs["json"]["model"],
+            fake_response(next(client.responses)),
+        )
+        agent = OpenRouterAgent(
+            "key",
+            "primary-model",
+            model_candidates=("fallback-model",),
+        )
+
+        response = await agent._request_chat_completion(client, 1, [], [])
+
+        self.assertEqual(response.json()["choices"][0]["message"]["content"], "ok")
+        self.assertEqual(client.models, ["primary-model", "fallback-model"])
+
+
+async def _async_response(client, model, response):
+    client.models.append(model)
+    return response
 
 
 if __name__ == "__main__":

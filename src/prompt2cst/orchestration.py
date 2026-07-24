@@ -15,7 +15,8 @@ from pydantic import BaseModel, ValidationError
 
 class ModelRole(StrEnum):
     REQUIREMENTS = "requirements_model"
-    RF_REASONING = "rf_reasoning_model"
+    CALCULATIONS = "calculations_model"
+    PARAMETERS = "parameters_model"
     GEOMETRY = "geometry_model"
     SIMULATION = "simulation_model"
     CRITIC = "critic_model"
@@ -105,6 +106,7 @@ class OpenAICompatibleProvider:
         accounting = ModelAccounting()
         last_error: Exception | None = None
         started = time.monotonic()
+        schema_mode = 0
         for attempt in range(self.max_retries + 1):
             accounting.calls += 1
             self.log(
@@ -120,25 +122,39 @@ class OpenAICompatibleProvider:
                 async with httpx.AsyncClient(
                     timeout=httpx.Timeout(timeout, connect=min(15, timeout))
                 ) as client:
+                    payload: dict[str, Any] = {
+                        "model": model,
+                        "messages": messages,
+                        "temperature": 0,
+                    }
+                    if schema_mode == 0:
+                        payload["response_format"] = {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": response_schema.__name__,
+                                "strict": True,
+                                "schema": response_schema.model_json_schema(),
+                            },
+                        }
+                    else:
+                        schema_instruction = {
+                            "role": "system",
+                            "content": (
+                                "Return only one JSON object that validates against "
+                                "this schema: "
+                                + json.dumps(response_schema.model_json_schema())
+                            ),
+                        }
+                        payload["messages"] = [*messages, schema_instruction]
+                        if schema_mode == 1:
+                            payload["response_format"] = {"type": "json_object"}
                     response = await client.post(
                         f"{self.base_url}/chat/completions",
                         headers={
                             "Authorization": f"Bearer {self.api_key}",
                             "Content-Type": "application/json",
                         },
-                        json={
-                            "model": model,
-                            "messages": messages,
-                            "temperature": 0,
-                            "response_format": {
-                                "type": "json_schema",
-                                "json_schema": {
-                                    "name": response_schema.__name__,
-                                    "strict": True,
-                                    "schema": response_schema.model_json_schema(),
-                                },
-                            },
-                        },
+                        json=payload,
                     )
                     if not response.is_success:
                         classification = _classify_http(response.status_code)
@@ -148,6 +164,11 @@ class OpenAICompatibleProvider:
                     payload = response.json()
                     choice = (payload.get("choices") or [{}])[0]
                     content = (choice.get("message") or {}).get("content")
+                    if not isinstance(content, str) or not content.strip():
+                        raise ModelProviderError(
+                            "Model returned empty or non-text structured output",
+                            "invalid_output",
+                        )
                     parsed = json.loads(content)
                     value = response_schema.model_validate(parsed)
                     usage = payload.get("usage") or {}
@@ -171,6 +192,11 @@ class OpenAICompatibleProvider:
                 last_error = ModelProviderError("Model request timed out", "timeout")
             except (httpx.HTTPError, ModelProviderError) as exc:
                 last_error = exc
+                if (
+                    isinstance(exc, ModelProviderError)
+                    and exc.classification == "request_rejected"
+                ):
+                    schema_mode = min(schema_mode + 1, 2)
             if attempt < self.max_retries:
                 await asyncio.sleep(min(0.25 * 2**attempt, 1))
         if isinstance(last_error, ModelProviderError):
@@ -295,28 +321,38 @@ def role_configs_from_environment(
     timeout = float(os.getenv("MODEL_TIMEOUT_SECONDS", "60"))
     mapping = {
         ModelRole.REQUIREMENTS: "REQUIREMENTS",
-        ModelRole.RF_REASONING: "RF_REASONING",
+        ModelRole.CALCULATIONS: "CALCULATIONS",
+        ModelRole.PARAMETERS: "PARAMETERS",
         ModelRole.GEOMETRY: "GEOMETRY",
         ModelRole.SIMULATION: "SIMULATION",
         ModelRole.CRITIC: "CRITIC",
         ModelRole.CODE_REVIEW: "CODE_REVIEW",
         ModelRole.RESULTS_ANALYSIS: "RESULTS",
     }
-    return {
-        role: RoleConfig(
+    configs = {}
+    for role, suffix in mapping.items():
+        legacy_suffix = (
+            "RF_REASONING"
+            if role in {ModelRole.CALCULATIONS, ModelRole.PARAMETERS}
+            else ""
+        )
+        model = os.getenv(f"MODEL_{suffix}", "")
+        if not model and legacy_suffix:
+            model = os.getenv(f"MODEL_{legacy_suffix}", "")
+        fallback_text = os.getenv(f"MODEL_{suffix}_FALLBACKS", "")
+        if not fallback_text and legacy_suffix:
+            fallback_text = os.getenv(f"MODEL_{legacy_suffix}_FALLBACKS", "")
+        configs[role] = RoleConfig(
             role=role,
             provider=provider,
-            model=os.getenv(f"MODEL_{suffix}", default_model),
+            model=model or default_model,
             fallback_models=tuple(
-                item.strip()
-                for item in os.getenv(f"MODEL_{suffix}_FALLBACKS", "").split(",")
-                if item.strip()
+                item.strip() for item in fallback_text.split(",") if item.strip()
             ),
             timeout_seconds=timeout,
             enabled=os.getenv(f"MODEL_{suffix}_ENABLED", "true").casefold() != "false",
         )
-        for role, suffix in mapping.items()
-    }
+    return configs
 
 
 _SECRET_PATTERN = re.compile(r"(sk-or-v1-|Bearer\s+)[A-Za-z0-9_.-]+", re.IGNORECASE)
