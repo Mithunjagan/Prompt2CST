@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .capabilities import capability_browser
 
 ANTENNA_FAMILIES = [
     {
@@ -97,12 +98,18 @@ def capability_catalog() -> dict:
             "expanded-open boundary",
             "frequency-domain far-field monitor",
         ],
-        "unsupported_capabilities": UNSUPPORTED_CAPABILITIES,
+        "unsupported_capabilities": [
+            item["id"] for item in capability_browser() if not item["supported"]
+        ]
+        + [
+            "solver execution and automatic result extraction",
+            "mesh-cell count guarantee",
+        ],
+        "capabilities": capability_browser(),
         "solver_run": False,
         "guidance": (
-            "Use a dedicated family tool when one exists. Use the custom "
-            "parametric tool only when the antenna can be represented with "
-            "the validated primitives. Otherwise report the missing "
-            "capability instead of substituting another antenna."
+            "Plan against registered compiler capabilities. Existing families "
+            "are compatibility templates, not topology restrictions. Report "
+            "the exact missing capability instead of substituting an antenna."
         ),
     }

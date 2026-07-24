@@ -387,10 +387,7 @@ End With
 
 
 def parametric_ports_history(spec: ParametricAntennaSpec) -> str:
-    return "\n\n".join(
-        _discrete_port_primitive_history(port)
-        for port in spec.ports
-    )
+    return "\n\n".join(_discrete_port_primitive_history(port) for port in spec.ports)
 
 
 def complete_parametric_preview(
@@ -408,14 +405,8 @@ def complete_parametric_preview(
             spec.sweep_stop_ghz,
         )
     if spec.include_farfield_monitor:
-        history["farfield_monitor"] = farfield_monitor_values(
-            spec.frequency_ghz
-        )
-    return {
-        key: value
-        for key, value in history.items()
-        if value
-    }
+        history["farfield_monitor"] = farfield_monitor_values(spec.frequency_ghz)
+    return {key: value for key, value in history.items() if value}
 
 
 def dipole_parametric_spec(design: DipoleDesign) -> ParametricAntennaSpec:

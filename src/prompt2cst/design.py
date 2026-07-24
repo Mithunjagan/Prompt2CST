@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import math
-
+from dataclasses import asdict, dataclass
 
 SPEED_OF_LIGHT_M_S = 299_792_458.0
 
@@ -22,7 +21,9 @@ class PatchInputs:
         if not 0.1 <= self.frequency_ghz <= 100.0:
             raise ValueError("frequency_ghz must be between 0.1 and 100")
         if not 1.0 < self.relative_permittivity <= 20.0:
-            raise ValueError("relative_permittivity must be greater than 1 and at most 20")
+            raise ValueError(
+                "relative_permittivity must be greater than 1 and at most 20"
+            )
         if not 0.05 <= self.substrate_height_mm <= 10.0:
             raise ValueError("substrate_height_mm must be between 0.05 and 10")
         if not 0.0 <= self.loss_tangent <= 0.2:
@@ -69,18 +70,13 @@ def calculate_rectangular_patch(inputs: PatchInputs) -> PatchDesign:
     epsilon_r = inputs.relative_permittivity
 
     patch_width_m = (
-        SPEED_OF_LIGHT_M_S
-        / (2.0 * frequency_hz)
-        * math.sqrt(2.0 / (epsilon_r + 1.0))
+        SPEED_OF_LIGHT_M_S / (2.0 * frequency_hz) * math.sqrt(2.0 / (epsilon_r + 1.0))
     )
 
     width_height_ratio = patch_width_m / height_m
-    epsilon_eff = (
-        (epsilon_r + 1.0) / 2.0
-        + (epsilon_r - 1.0)
-        / 2.0
-        * (1.0 + 12.0 / width_height_ratio) ** -0.5
-    )
+    epsilon_eff = (epsilon_r + 1.0) / 2.0 + (epsilon_r - 1.0) / 2.0 * (
+        1.0 + 12.0 / width_height_ratio
+    ) ** -0.5
 
     delta_length_m = (
         0.412
@@ -103,12 +99,8 @@ def calculate_rectangular_patch(inputs: PatchInputs) -> PatchDesign:
         height_m=height_m,
     )
 
-    resistance_ratio = (
-        inputs.feed_impedance_ohm / inputs.estimated_edge_resistance_ohm
-    )
-    inset_depth_m = patch_length_m / math.pi * math.acos(
-        math.sqrt(resistance_ratio)
-    )
+    resistance_ratio = inputs.feed_impedance_ohm / inputs.estimated_edge_resistance_ohm
+    inset_depth_m = patch_length_m / math.pi * math.acos(math.sqrt(resistance_ratio))
     inset_depth_m = min(inset_depth_m, patch_length_m * 0.45)
 
     patch_width_mm = patch_width_m * 1000.0
@@ -151,27 +143,19 @@ class MonopoleInputs:
         if not 0.01 <= self.wire_radius_mm <= 100.0:
             raise ValueError("wire_radius_mm must be between 0.01 and 100")
         if self.wire_radius_mm * 2.0 >= self.ground_size_mm:
-            raise ValueError(
-                "wire diameter must be smaller than ground_size_mm"
-            )
+            raise ValueError("wire diameter must be smaller than ground_size_mm")
         if not 1.0 <= self.ground_size_mm <= 5000.0:
             raise ValueError("ground_size_mm must be between 1 and 5000")
         if not 0.01 <= self.ground_thickness_mm <= 20.0:
-            raise ValueError(
-                "ground_thickness_mm must be between 0.01 and 20"
-            )
+            raise ValueError("ground_thickness_mm must be between 0.01 and 20")
         if not 0.01 <= self.feed_gap_mm <= 50.0:
             raise ValueError("feed_gap_mm must be between 0.01 and 50")
         if not 10.0 <= self.port_impedance_ohm <= 200.0:
             raise ValueError("port_impedance_ohm must be between 10 and 200")
         if not 0.01 <= self.sweep_start_ghz < self.sweep_stop_ghz <= 100.0:
-            raise ValueError(
-                "frequency sweep must satisfy 0.01 <= start < stop <= 100"
-            )
+            raise ValueError("frequency sweep must satisfy 0.01 <= start < stop <= 100")
         if not self.sweep_start_ghz <= self.frequency_ghz <= self.sweep_stop_ghz:
-            raise ValueError(
-                "frequency_ghz must lie inside the simulation sweep"
-            )
+            raise ValueError("frequency_ghz must lie inside the simulation sweep")
 
 
 @dataclass(frozen=True)
@@ -236,9 +220,7 @@ class DipoleInputs:
         if not 0.1 <= self.frequency_ghz <= 100.0:
             raise ValueError("frequency_ghz must be between 0.1 and 100")
         if not 0.2 <= self.total_conductor_length_mm <= 2000.0:
-            raise ValueError(
-                "total_conductor_length_mm must be between 0.2 and 2000"
-            )
+            raise ValueError("total_conductor_length_mm must be between 0.2 and 2000")
         if not 0.01 <= self.wire_radius_mm <= 100.0:
             raise ValueError("wire_radius_mm must be between 0.01 and 100")
         if not 0.01 <= self.feed_gap_mm <= 100.0:
@@ -246,13 +228,9 @@ class DipoleInputs:
         if not 10.0 <= self.port_impedance_ohm <= 200.0:
             raise ValueError("port_impedance_ohm must be between 10 and 200")
         if not 0.01 <= self.sweep_start_ghz < self.sweep_stop_ghz <= 100.0:
-            raise ValueError(
-                "frequency sweep must satisfy 0.01 <= start < stop <= 100"
-            )
+            raise ValueError("frequency sweep must satisfy 0.01 <= start < stop <= 100")
         if not self.sweep_start_ghz <= self.frequency_ghz <= self.sweep_stop_ghz:
-            raise ValueError(
-                "frequency_ghz must lie inside the simulation sweep"
-            )
+            raise ValueError("frequency_ghz must lie inside the simulation sweep")
 
 
 @dataclass(frozen=True)
@@ -302,29 +280,24 @@ def _microstrip_width_m(
 ) -> float:
     """Hammerstad-style closed-form estimate of microstrip width."""
 
-    a_value = (
-        impedance_ohm / 60.0 * math.sqrt((epsilon_r + 1.0) / 2.0)
-        + (epsilon_r - 1.0)
-        / (epsilon_r + 1.0)
-        * (0.23 + 0.11 / epsilon_r)
-    )
-    width_height_ratio = 8.0 * math.exp(a_value) / (
-        math.exp(2.0 * a_value) - 2.0
-    )
+    a_value = impedance_ohm / 60.0 * math.sqrt((epsilon_r + 1.0) / 2.0) + (
+        epsilon_r - 1.0
+    ) / (epsilon_r + 1.0) * (0.23 + 0.11 / epsilon_r)
+    width_height_ratio = 8.0 * math.exp(a_value) / (math.exp(2.0 * a_value) - 2.0)
 
     if width_height_ratio >= 2.0:
-        b_value = (
-            377.0
-            * math.pi
-            / (2.0 * impedance_ohm * math.sqrt(epsilon_r))
-        )
-        width_height_ratio = 2.0 / math.pi * (
-            b_value
-            - 1.0
-            - math.log(2.0 * b_value - 1.0)
-            + (epsilon_r - 1.0)
-            / (2.0 * epsilon_r)
-            * (math.log(b_value - 1.0) + 0.39 - 0.61 / epsilon_r)
+        b_value = 377.0 * math.pi / (2.0 * impedance_ohm * math.sqrt(epsilon_r))
+        width_height_ratio = (
+            2.0
+            / math.pi
+            * (
+                b_value
+                - 1.0
+                - math.log(2.0 * b_value - 1.0)
+                + (epsilon_r - 1.0)
+                / (2.0 * epsilon_r)
+                * (math.log(b_value - 1.0) + 0.39 - 0.61 / epsilon_r)
+            )
         )
 
     return width_height_ratio * height_m

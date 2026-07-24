@@ -3,13 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import (
-    QObject,
     Property,
+    QObject,
     QThread,
     QTimer,
     QUrl,
@@ -22,6 +22,8 @@ from PySide6.QtQuickControls2 import QQuickStyle
 
 from . import __version__
 from .agent import OpenRouterAgent, format_exception_details
+from .capabilities import capability_browser
+from .orchestration import ModelRole, role_configs_from_environment
 from .ui_logic import (
     EXAMPLE_PROMPTS,
     FAMILY_OPTIONS,
@@ -119,6 +121,7 @@ class Prompt2CSTController(QObject):
     statusChanged = Signal()
     assistantTextChanged = Signal()
     activityTextChanged = Signal()
+    modelSettingsChanged = Signal()
     approvalRequested = Signal(str, str, str)
     showError = Signal(str)
 
@@ -134,6 +137,8 @@ class Prompt2CSTController(QObject):
         self._agent_worker: AgentWorker | None = None
         self._model_thread: QThread | None = None
         self._model_worker: ModelWorker | None = None
+        self._role_configs = role_configs_from_environment(self._models[0])
+        self._provider_health = "Not checked"
 
     @Property(str, constant=True)
     def version(self) -> str:
@@ -169,6 +174,37 @@ class Prompt2CSTController(QObject):
     @Property(str, notify=activityTextChanged)
     def activityText(self) -> str:
         return self._activity_text
+
+    @Property(str, notify=modelSettingsChanged)
+    def modelOrchestrationText(self) -> str:
+        lines = ["ROLE | PROVIDER | MODEL | FALLBACKS | TIMEOUT | ENABLED | HEALTH"]
+        for role in ModelRole:
+            config = self._role_configs[role]
+            fallbacks = ", ".join(config.fallback_models) or "None"
+            lines.append(
+                f"{role.value} | {config.provider} | "
+                f"{config.model or 'Unconfigured'} | {fallbacks} | "
+                f"{config.timeout_seconds:g}s | "
+                f"{'Yes' if config.enabled else 'No'} | "
+                f"{self._provider_health}"
+            )
+        return "\n".join(lines)
+
+    @Property(str, constant=True)
+    def capabilityText(self) -> str:
+        lines = [
+            "CAPABILITY | STATUS | CLOSEST ALTERNATIVE | EXTENSIBLE",
+        ]
+        for item in capability_browser():
+            lines.append(
+                f"{item['id']} | "
+                f"{'SUPPORTED' if item['supported'] else 'UNSUPPORTED'} | "
+                f"{item['closest_alternative'] or 'None'} | "
+                f"{'Yes' if item['extensible'] else 'No'}"
+            )
+            if item["limitations"]:
+                lines.append(f"  Limitation: {item['limitations'][0]}")
+        return "\n".join(lines)
 
     @Slot(str, result=str)
     def familyExample(self, family_id: str) -> str:
@@ -213,6 +249,26 @@ class Prompt2CSTController(QObject):
         self._model_thread = thread
         thread.start()
 
+    @Slot(str)
+    def useModelForAllRoles(self, model: str) -> None:
+        selected = model.strip()
+        if not selected:
+            self.showError.emit("Choose or type a model ID first.")
+            return
+        self._role_configs = {
+            role: config.__class__(
+                role=role,
+                provider=config.provider,
+                model=selected,
+                fallback_models=config.fallback_models,
+                timeout_seconds=config.timeout_seconds,
+                enabled=config.enabled,
+            )
+            for role, config in self._role_configs.items()
+        }
+        self.modelSettingsChanged.emit()
+        self._set_status("Assigned selected model to all roles")
+
     @Slot(str, str, str, str, str)
     def runAgent(
         self,
@@ -228,9 +284,7 @@ class Prompt2CSTController(QObject):
             self.showError.emit("Enter your OpenRouter API key.")
             return
         if not model.strip():
-            self.showError.emit(
-                "Choose or type a tool-capable OpenRouter model ID."
-            )
+            self.showError.emit("Choose or type a tool-capable OpenRouter model ID.")
             return
         try:
             composed_prompt = compose_user_request(
@@ -244,15 +298,11 @@ class Prompt2CSTController(QObject):
 
         self._set_assistant_text("")
         self._set_activity_text(
-            f"Model: {model.strip()}\n"
-            f"Family: {family_id or 'auto'}\n"
-            f"Mode: {mode}\n"
+            f"Model: {model.strip()}\nFamily: {family_id or 'auto'}\nMode: {mode}\n"
         )
         self._set_busy(True)
         self._set_status(
-            "Generating safe preview…"
-            if mode == "preview"
-            else "Preparing CST build…"
+            "Generating safe preview…" if mode == "preview" else "Preparing CST build…"
         )
 
         worker = AgentWorker(
@@ -296,12 +346,16 @@ class Prompt2CSTController(QObject):
     @Slot(list)
     def _models_loaded(self, models: list[str]) -> None:
         self._models = models
+        self._provider_health = "Healthy"
         self.modelsChanged.emit()
+        self.modelSettingsChanged.emit()
         self._set_busy(False)
         self._set_status(f"Loaded {len(models)} tool-capable models")
 
     @Slot(str)
     def _models_failed(self, error: str) -> None:
+        self._provider_health = "Unhealthy"
+        self.modelSettingsChanged.emit()
         self._set_busy(False)
         self._set_status("Model refresh failed")
         self.showError.emit(error)
@@ -314,9 +368,7 @@ class Prompt2CSTController(QObject):
     @Slot(str)
     def _append_log(self, message: str) -> None:
         prefix = "\n" if self._activity_text else ""
-        self._set_activity_text(
-            f"{self._activity_text}{prefix}[agent] {message}"
-        )
+        self._set_activity_text(f"{self._activity_text}{prefix}[agent] {message}")
 
     @Slot(object)
     def _handle_approval(self, request: ApprovalRequest) -> None:
@@ -339,9 +391,7 @@ class Prompt2CSTController(QObject):
 
     @Slot(str)
     def _agent_failed(self, error: str) -> None:
-        self._set_activity_text(
-            f"{self._activity_text}\n\nERROR\n{error}"
-        )
+        self._set_activity_text(f"{self._activity_text}\n\nERROR\n{error}")
         self._set_assistant_text(
             "## Request failed\n\n"
             "Open **Activity** for the exact error and retry only after "

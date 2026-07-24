@@ -63,9 +63,9 @@ class ParametricSafetyTests(unittest.TestCase):
         preview = complete_parametric_preview(spec)
         combined = "\n".join(preview.values())
 
-        self.assertIn('With Brick', combined)
-        self.assertIn('With Cylinder', combined)
-        self.assertIn('With DiscretePort', combined)
+        self.assertIn("With Brick", combined)
+        self.assertIn("With Cylinder", combined)
+        self.assertIn("With DiscretePort", combined)
         self.assertIn('.Name "Substrate"', combined)
         self.assertNotIn("Solver.Start", combined)
         self.assertNotIn("Shell", combined)

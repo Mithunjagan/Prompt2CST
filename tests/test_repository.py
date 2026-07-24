@@ -1,10 +1,9 @@
-from pathlib import Path
 import re
 import tomllib
 import unittest
+from pathlib import Path
 
 from prompt2cst.cst_bridge import default_output_dir
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -25,12 +24,8 @@ class RepositoryReleaseTests(unittest.TestCase):
         self.assertTrue((ROOT / "src/prompt2cst/qml/Main.qml").is_file())
         self.assertTrue((ROOT / "src/prompt2cst/qml/GlassPanel.qml").is_file())
         self.assertTrue((ROOT / "src/prompt2cst/qml/LiquidButton.qml").is_file())
-        self.assertTrue(
-            (ROOT / "src/prompt2cst/qml/ChevronIndicator.qml").is_file()
-        )
-        self.assertTrue(
-            (ROOT / "src/prompt2cst/assets/prompt2cst.svg").is_file()
-        )
+        self.assertTrue((ROOT / "src/prompt2cst/qml/ChevronIndicator.qml").is_file())
+        self.assertTrue((ROOT / "src/prompt2cst/assets/prompt2cst.svg").is_file())
 
     def test_double_click_setup_and_launch_exist(self) -> None:
         for name in (

@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import sys
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-import json
-import sys
 from typing import Any
 
 import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from .orchestration import redact_secrets
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-MAX_AGENT_STEPS = 8
+MAX_AGENT_STEPS = int(os.getenv("MODEL_MAX_TOOL_CALLS", "8"))
 MCP_TIMEOUT_SECONDS = 20
 
 SYSTEM_PROMPT = """
@@ -39,6 +41,7 @@ WRITE_TOOLS = {
     "build_wire_monopole",
     "build_center_fed_dipole",
     "build_parametric_antenna",
+    "execute_approved_plan",
 }
 PREVIEW_FOR_WRITE = {
     "build_test_brick": "preview_test_brick",
@@ -46,6 +49,7 @@ PREVIEW_FOR_WRITE = {
     "build_wire_monopole": "preview_wire_monopole",
     "build_center_fed_dipole": "preview_center_fed_dipole",
     "build_parametric_antenna": "preview_parametric_antenna",
+    "execute_approved_plan": "get_design_plan",
 }
 
 LogCallback = Callable[[str], None]
@@ -76,7 +80,7 @@ def format_exception_details(exc: BaseException) -> str:
             details.append(detail)
 
     visit(exc)
-    return "\n".join(details) or type(exc).__name__
+    return redact_secrets("\n".join(details) or type(exc).__name__)
 
 
 def is_write_tool(tool_name: str) -> bool:
@@ -84,6 +88,17 @@ def is_write_tool(tool_name: str) -> bool:
 
 
 def preview_arguments(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    if tool_name == "execute_approved_plan":
+        required = {"plan_id", "approval_hash"}
+        missing = required - arguments.keys()
+        if missing:
+            raise ValueError(
+                f"execute_approved_plan requires {', '.join(sorted(missing))}"
+            )
+        return {
+            "plan_id": arguments["plan_id"],
+            "approval_hash": arguments["approval_hash"],
+        }
     if tool_name == "build_test_brick":
         return {}
     if tool_name == "build_rectangular_patch":
@@ -124,9 +139,7 @@ def preview_arguments(tool_name: str, arguments: dict[str, Any]) -> dict[str, An
         return {key: value for key, value in arguments.items() if key in allowed}
     if tool_name == "build_parametric_antenna":
         if "spec" not in arguments:
-            raise ValueError(
-                "build_parametric_antenna requires a complete spec"
-            )
+            raise ValueError("build_parametric_antenna requires a complete spec")
         return {"spec": arguments["spec"]}
     raise ValueError(f"No preview mapping exists for {tool_name}")
 
@@ -311,9 +324,7 @@ class OpenRouterAgent:
                         tool_name = function.get("name", "")
 
                         try:
-                            arguments = parse_tool_arguments(
-                                function.get("arguments")
-                            )
+                            arguments = parse_tool_arguments(function.get("arguments"))
                             result = await self._call_tool_safely(
                                 session=session,
                                 tool_name=tool_name,
@@ -374,7 +385,10 @@ class OpenRouterAgent:
                 previews[preview_key] = preview
 
             proposed_arguments = dict(arguments)
-            proposed_arguments["confirm"] = True
+            if tool_name == "execute_approved_plan":
+                proposed_arguments["approved"] = True
+            else:
+                proposed_arguments["confirm"] = True
             if not approve_write(tool_name, proposed_arguments, preview):
                 self.log(f"User denied CST write: {tool_name}")
                 return {
@@ -417,7 +431,7 @@ async def _raise_for_openrouter_error(response: httpx.Response) -> None:
     except ValueError:
         details = response.text
     raise Prompt2CSTAgentError(
-        f"OpenRouter HTTP {response.status_code}: {details}"
+        redact_secrets(f"OpenRouter HTTP {response.status_code}: {details}")
     )
 
 

@@ -18,14 +18,14 @@
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.5.0b1-6c63ff" alt="Version 0.5.0 beta 1"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.11-3776ab?logo=python&amp;logoColor=white" alt="Python 3.11"></a>
   <a href="#platform-support"><img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?logo=windows" alt="Windows 10 and 11"></a>
-  <a href="#verification"><img src="https://img.shields.io/badge/tests-39%20passing-22c55e" alt="39 tests passing"></a>
-  
+  <a href="#verification"><img src="https://img.shields.io/badge/tests-63%20passing-22c55e" alt="63 tests passing"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-16a34a" alt="MIT license"></a>
 </p>
 
 <p align="center">
   <a href="#quick-start"><strong>Quick start</strong></a>
   ·
-  <a href="#the-12-mcp-tools"><strong>Explore the tools</strong></a>
+  <a href="#the-20-mcp-tools"><strong>Explore the tools</strong></a>
   ·
   <a href="#architecture"><strong>See the architecture</strong></a>
   ·
@@ -41,25 +41,54 @@
 </p>
 
 Prompt2CST is a Windows RF-design desktop application and local Model Context
-Protocol (MCP) server. It connects a tool-capable OpenRouter model to 12 typed
-tools that calculate, validate, preview, and—only after visible user
-approval—write supported antenna geometry into CST Studio Suite 2026.
+Protocol (MCP) server. It connects configurable OpenAI-compatible model roles
+to 20 typed tools that plan DesignIR, calculate, validate, compile, preview,
+and—only after visible user approval with a matching immutable-plan
+hash—write supported geometry into CST Studio Suite 2026.
 
 | 🧠 Intent becomes engineering | 🛡️ Writes remain controlled | 🔎 Every step stays inspectable |
 |---|---|---|
 | Natural language is routed into dedicated calculations and strict geometry schemas. | Every write is paired with a preview, visible approval sheet, and server-side confirmation check. | Assistant output, MCP activity, proposed arguments, warnings, and saved project path remain reviewable. |
 
 <p align="center">
-  <strong>12 typed tools</strong> ·
-  <strong>5 protected write tools</strong> ·
+  <strong>20 typed tools</strong> ·
+  <strong>6 protected write tools</strong> ·
   <strong>4 antenna families</strong> ·
-  <strong>39 tests</strong> ·
+  <strong>63 tests</strong> ·
   <strong>0 solver calls</strong>
 </p>
 
 The application is built for traceable geometry generation, learning, and
-prototyping. It does **not** run the CST solver, extract results, optimize an
-antenna, or claim electromagnetic performance.
+prototyping. It does **not yet** run the CST solver or claim electromagnetic
+performance. Result schemas and extraction boundaries exist, but missing CST
+values are reported as unavailable rather than invented.
+
+## DesignIR platform upgrade
+
+The v0.6 development architecture removes antenna-family selection as a hard
+limit. Existing families are compatibility templates that adapt into the same
+strict `DesignIR 1.0` used for arbitrary supported structures.
+
+- Seven configurable model roles support OpenRouter, generic
+  OpenAI-compatible endpoints, fallbacks, retries, timeouts, health, accounting,
+  cancellation, and a deterministic mock provider.
+- A restricted expression parser accepts safe parameter arithmetic and rejects
+  executable model output.
+- The capability registry, rather than the antenna catalog, determines whether
+  a requested primitive, Boolean, transform, port, boundary, solver, mesh,
+  monitor, sweep, or optimization feature can compile.
+- Batched MCP tools validate, compile, preview, hash, approve, execute, monitor,
+  cancel, and extract one complete plan without one tool call per object.
+- Immutable preview storage and SHA-256 content hashes invalidate approval when
+  any design, validation, or compiled operation changes.
+- The compiler emits deterministic, reviewable CST History List operations and
+  never accepts model-generated macros.
+
+See [the architecture](docs/architecture.md),
+[DesignIR](docs/design-ir.md),
+[model orchestration](docs/model-orchestration.md),
+[the CST compiler](docs/cst-compiler.md), and
+[the capability registry](docs/capability-registry.md).
 
 > [!IMPORTANT]
 > **Beta safety notice:** Always inspect geometry, units, materials, ports,
@@ -106,7 +135,7 @@ flowchart LR
 - [Using the desktop application](#using-the-desktop-application)
 - [Where outputs are stored](#where-outputs-are-stored)
 - [Supported antenna families](#supported-antenna-families)
-- [The 12 MCP tools](#the-12-mcp-tools)
+- [The 20 MCP tools](#the-20-mcp-tools)
 - [Architecture](#architecture)
 - [Application state machine](#application-state-machine)
 - [Complete logic flow](#complete-logic-flow)
@@ -160,19 +189,19 @@ The current beta intentionally does not provide:
 - S-parameter, VSWR, impedance, gain, efficiency, or radiation-pattern
   extraction;
 - automatic electromagnetic validation;
-- automatic optimization or parameter sweeps;
-- automatic mesh refinement or mesh-cell estimation;
+- automatic launch of optimization or parameter sweeps;
+- a verified live-CST local mesh-refinement compiler;
 - a Learning Edition 100k-cell guarantee;
 - waveguide ports;
 - phased-array excitation;
-- boolean solid operations;
-- arbitrary rotations, curves, helices, toroids, polygon extrusion, or general
-  VBA/Python execution;
-- cloud project storage or persistent design history.
+- verified compilation for curves, helices, toroids, polygon extrusion,
+  circular arrays, imported geometry, or general VBA/Python execution;
+- cloud project storage.
 
-“Any antenna” is a roadmap goal, not a current capability. If a design cannot
-be represented by a dedicated builder or the validated custom primitive
-schema, the assistant is instructed to report the missing capability.
+Designs are not rejected merely because they lack a catalog family. If a
+DesignIR requires an unavailable compiler capability, validation names that
+exact capability, the closest supported alternative, and whether a compiler
+extension can add it.
 
 ## Platform support
 
@@ -519,7 +548,7 @@ The validated Pydantic schema supports:
 Unknown fields, duplicate names/numbers, undefined materials, invalid ranges,
 and degenerate ports are rejected.
 
-## The 12 MCP tools
+## The 20 MCP tools
 
 | Tool | Type | Purpose |
 |---|---|---|
@@ -535,10 +564,19 @@ and degenerate ports are rejected.
 | `build_center_fed_dipole` | Write | Create the dipole through the parametric builder |
 | `preview_parametric_antenna` | Preview | Validate and preview a custom primitive specification |
 | `build_parametric_antenna` | Write | Create the validated custom project |
+| `validate_design_plan` | Read-only | Run deterministic validation for one complete DesignIR |
+| `compile_design_plan` | Read-only | Compile a valid DesignIR into deterministic CST operations |
+| `preview_design_plan` | Preview | Validate, compile, hash, and immutably store one batched plan |
+| `get_design_plan` | Read-only | Retrieve the exact immutable approval preview |
+| `execute_approved_plan` | Write | Execute an unchanged approved plan and persist operation progress |
+| `get_execution_status` | Read-only | Read persisted execution state and completed operations |
+| `cancel_execution` | Control | Request cancellation between deterministic CST operations |
+| `extract_simulation_results` | Read-only | Return normalized values or honest unavailable-output records |
 
-Five tools are classified as writing tools. Each maps to a specific preview
-tool. `confirm=true` is injected by the desktop agent only after the approval
-callback returns true.
+Six tools are classified as writing tools. Legacy builders map to their
+family preview and use `confirm=true`. `execute_approved_plan` maps to the
+stored immutable preview and uses `approved=true` only after the desktop
+approval callback returns true.
 
 ## Architecture
 
@@ -555,7 +593,7 @@ flowchart TB
     Approval{"Native approval sheet"}
     Review["Assistant + Activity review"]
     Client["MCP client<br/>local stdio only"]
-    Server["FastMCP server<br/>12 typed tools"]
+    Server["FastMCP server<br/>20 typed tools"]
     Catalog["Capability catalog"]
     Design["RF calculations"]
     Schema["Strict Pydantic schemas"]
@@ -597,7 +635,13 @@ flowchart TB
 | Presentation | `qml/Main.qml`, `GlassPanel.qml`, `LiquidButton.qml`, `ChevronIndicator.qml` | Responsive desktop layout, inputs, review tabs, approval dialog, visual feedback |
 | Desktop controller | `gui.py`, `ui_logic.py` | Qt properties/signals, worker lifetime, request composition, error display, approval synchronization |
 | Agent orchestration | `agent.py` | OpenRouter requests, MCP discovery, tool loop, timeouts, preview-before-write, approval enforcement |
-| MCP interface | `server.py` | 12 typed tools, confirmation checks, preview/build separation |
+| MCP interface | `server.py` | 20 typed tools, batched plans, confirmation checks, preview/build separation |
+| Universal design model | `design_ir.py`, `adapters.py` | Strict DesignIR 1.0, safe expressions, legacy-family conversion |
+| Deterministic validation | `validation.py`, `capabilities.py` | Schema, dependency, geometry, material, port, simulation, mesh and sweep gates |
+| CST compiler | `cst_compiler/` | Stable History List operation generation organized by responsibility |
+| Plan lifecycle | `plan_service.py`, `workflow.py` | Persistent state machine, immutable previews, approval hashes and progress |
+| Model roles | `orchestration.py` | Provider protocol, routing, fallbacks, retries, accounting and health |
+| Results | `results.py` | Typed SimulationResult values with explicit provenance |
 | Capability truth | `catalog.py` | Supported families, primitives, and explicit unsupported features |
 | RF calculations | `design.py` | Patch, monopole, and dipole inputs, validation, and calculated dimensions |
 | Custom schema | `parametric.py` | Strict materials, solids, ports, coordinate limits, and cross-field validation |
@@ -784,7 +828,7 @@ Mode: preview
 [agent] GUI worker started
 [agent] Starting local Prompt2CST MCP server
 [agent] MCP initialized; discovering tools
-[agent] Discovered 12 MCP tools
+[agent] Discovered 20 MCP tools
 [agent] OpenRouter request 1/8 using cohere/north-mini-code:free
 [agent] Calling MCP tool: preview_wire_monopole
 [agent] OpenRouter request 2/8 using cohere/north-mini-code:free
@@ -800,7 +844,7 @@ Mode: build
 [agent] GUI worker started
 [agent] Starting local Prompt2CST MCP server
 [agent] MCP initialized; discovering tools
-[agent] Discovered 12 MCP tools
+[agent] Discovered 20 MCP tools
 [agent] OpenRouter request 1/8 using <selected-tool-capable-model>
 [agent] Previewing before write: preview_center_fed_dipole
 
@@ -897,6 +941,16 @@ Read [SECURITY.md](SECURITY.md) before publishing or extending the project.
 |---|---|---|
 | `PROMPT2CST_OUTPUT_DIR` | Checkout `outputs`; installed fallback under Documents | Overrides the CST project directory |
 | `PROMPT2CST_CST_PROGID` | `CSTStudio.Application.2026` | Overrides the CST COM ProgID |
+| `PROMPT2CST_STATE_DIR` | Output directory `/.prompt2cst-state` | Persistent workflows, immutable plans and execution records |
+| `PROMPT2CST_MAX_SWEEP_CASES` | `200` | Blocks excessive Cartesian sweep expansion |
+| `PROMPT2CST_MAX_ESTIMATED_MESH_CELLS` | `100000` | Configurable licence/mesh guard |
+| `MODEL_PROVIDER` | `openrouter` | Provider ID for model roles |
+| `MODEL_BASE_URL` | OpenRouter API | Generic OpenAI-compatible endpoint |
+| `MODEL_<ROLE>` | Empty / selected desktop model | Per-role model assignment |
+| `MODEL_<ROLE>_FALLBACKS` | Empty | Comma-separated fallback IDs |
+| `MODEL_TIMEOUT_SECONDS` | `60` | Per-call timeout |
+| `MODEL_MAX_RETRIES` | `2` | Bounded structured-output retry count |
+| `MODEL_MAX_TOOL_CALLS` | `8` | Bounded compatibility-agent step count |
 
 Example for one PowerShell session:
 
@@ -974,7 +1028,7 @@ strongest built-in approval flow.
 
 Validated for v0.5.0b1 on Windows with Python 3.11:
 
-- 39 unit tests pass;
+- 63 unit tests pass;
 - `pip check` reports no broken requirements;
 - Python source and tests compile;
 - all QML files pass `qmllint`;
@@ -1170,6 +1224,8 @@ projects.
 | `CHANGELOG.md` | Version history |
 | `LICENSE` | MIT license |
 | `.gitignore` | Excludes environments, build artifacts, secrets, outputs, CST projects, and editor state |
+| `.env.example` | Secret-safe provider, role, timeout, sweep, mesh, state and CST environment template |
+| `AGENTS.md` | Architecture, conventions, commands, security/CST rules and definition of done |
 
 ### GitHub automation
 
@@ -1182,6 +1238,12 @@ projects.
 | Path | Purpose |
 |---|---|
 | `docs/architecture.md` | Short architecture and safety-boundary companion |
+| `docs/design-ir.md` | DesignIR schema, safe expressions and extension process |
+| `docs/model-orchestration.md` | Roles, providers, fallbacks, health and configuration |
+| `docs/cst-compiler.md` | Deterministic compiler modules and extension rules |
+| `docs/capability-registry.md` | Compiler capability source of truth |
+| `docs/security.md` | Threat boundaries, hashing, state and injection controls |
+| `docs/testing.md` | Offline and live-CST verification |
 | `docs/screenshots/README.md` | Safe instructions for maintaining public screenshots without credentials |
 | `docs/screenshots/prompt2cst-workspace.png` | Sanitized GitHub hero screenshot of the complete desktop workspace |
 
@@ -1194,12 +1256,22 @@ projects.
 | `src/prompt2cst/gui.py` | Qt application, controller properties/signals, workers, approval synchronization, errors, Windows backdrop |
 | `src/prompt2cst/ui_logic.py` | Family selector data, examples, and preview/build prompt composition |
 | `src/prompt2cst/agent.py` | OpenRouter client, MCP child session, tool loop, error formatting, timeouts, preview/approval enforcement |
-| `src/prompt2cst/server.py` | FastMCP server and all 12 typed tools |
+| `src/prompt2cst/server.py` | FastMCP server and all 20 typed tools |
 | `src/prompt2cst/catalog.py` | Honest capability and limitation catalog exposed to the model |
 | `src/prompt2cst/design.py` | Patch, monopole, and dipole calculations and input validation |
 | `src/prompt2cst/parametric.py` | Strict custom materials, solids, ports, limits, and summary models |
 | `src/prompt2cst/cst_macros.py` | CST History List generation for units, materials, geometry, ports, boundaries, and monitors |
 | `src/prompt2cst/cst_bridge.py` | CST COM status/build methods, portable output defaults, path confinement, overwrite protection |
+| `src/prompt2cst/design_ir.py` | Strict versioned DesignIR and restricted expression evaluator |
+| `src/prompt2cst/calculations.py` | Deterministic RF formulas with provenance records |
+| `src/prompt2cst/capabilities.py` | Capability registry and requested-capability resolution |
+| `src/prompt2cst/validation.py` | Deterministic validation findings and severity policy |
+| `src/prompt2cst/adapters.py` | Existing-family and custom-parametric DesignIR adapters |
+| `src/prompt2cst/orchestration.py` | Model provider interface, role router, retries, fallbacks and health |
+| `src/prompt2cst/workflow.py` | Persistent explicit workflow state machine |
+| `src/prompt2cst/plan_service.py` | Batched preview, immutable storage, hashing, execution and cancellation |
+| `src/prompt2cst/results.py` | SimulationResult schema and provenance-safe normalization |
+| `src/prompt2cst/cst_compiler/` | Parameters, materials, primitives, booleans, transforms, ports, simulation, sweeps and outputs |
 | `src/prompt2cst/assets/prompt2cst.svg` | Packaged application icon |
 
 ### QML interface
@@ -1222,6 +1294,10 @@ projects.
 | `tests/test_parametric.py` | Strict schema, material references, extra-field rejection, port validation |
 | `tests/test_repository.py` | Version consistency, packaged resources, launchers, output portability, secret scanning |
 | `tests/test_ui_logic.py` | Preview/build prompt boundaries and empty-request rejection |
+| `tests/test_calculations.py` | RF formulas, unit conversion and engineering recommendations |
+| `tests/test_design_ir.py` | Safe expressions, adapters, validation, booleans, transforms and determinism |
+| `tests/test_orchestration.py` | Model fallback, structured-output rejection and secret redaction |
+| `tests/test_plan_service.py` | Batched preview, immutable hashes, execution progress and honest results |
 
 ### Generated, private, and local-only paths
 

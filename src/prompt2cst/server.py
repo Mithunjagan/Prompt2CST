@@ -22,8 +22,9 @@ from .design import (
     calculate_rectangular_patch,
     calculate_wire_monopole,
 )
+from .design_ir import DesignIR
 from .parametric import ParametricAntennaSpec
-
+from .plan_service import PlanService
 
 SERVER_INSTRUCTIONS = """
 Prompt2CST exposes safe, typed tools for CST Studio Suite 2026. Always call a
@@ -76,6 +77,74 @@ def antenna_catalog() -> dict:
     """List supported antenna families, safe primitives and limitations."""
 
     return capability_catalog()
+
+
+@mcp.tool()
+def validate_design_plan(design_ir: DesignIR) -> dict:
+    """Run deterministic schema, dependency, geometry and simulation checks."""
+
+    return PlanService().validate_design_plan(design_ir)
+
+
+@mcp.tool()
+def compile_design_plan(design_ir: DesignIR) -> dict:
+    """Compile valid DesignIR into deterministic CST History operations."""
+
+    return PlanService().compile_design_plan(design_ir)
+
+
+@mcp.tool()
+def preview_design_plan(design_ir: DesignIR) -> dict:
+    """Validate, compile and immutably store one complete read-only plan."""
+
+    return PlanService().preview_design_plan(design_ir)
+
+
+@mcp.tool()
+def get_design_plan(plan_id: str, approval_hash: str = "") -> dict:
+    """Return the immutable preview used by the desktop approval sheet."""
+
+    return PlanService().get_design_plan(plan_id, approval_hash)
+
+
+@mcp.tool()
+def execute_approved_plan(
+    plan_id: str,
+    approval_hash: str,
+    approved: bool = False,
+    project_name: str = "",
+    overwrite: bool = False,
+) -> dict:
+    """Execute only an unchanged immutable plan after explicit approval."""
+
+    return PlanService().execute_approved_plan(
+        plan_id=plan_id,
+        approval_hash=approval_hash,
+        approved=approved,
+        project_name=project_name or None,
+        overwrite=overwrite,
+    )
+
+
+@mcp.tool()
+def get_execution_status(execution_id: str) -> dict:
+    """Return persisted operation-by-operation execution progress."""
+
+    return PlanService().get_execution_status(execution_id)
+
+
+@mcp.tool()
+def cancel_execution(execution_id: str) -> dict:
+    """Request safe cancellation between deterministic CST operations."""
+
+    return PlanService().cancel_execution(execution_id)
+
+
+@mcp.tool()
+def extract_simulation_results(execution_id: str) -> dict:
+    """Return normalized results or explicitly report unavailable outputs."""
+
+    return PlanService().extract_simulation_results(execution_id)
 
 
 @mcp.tool()

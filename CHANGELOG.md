@@ -4,6 +4,12 @@ All notable Prompt2CST changes are documented here.
 
 ## Unreleased
 
+- Added DesignIR 1.0, safe expressions, deterministic RF calculations,
+  capability validation, a modular CST compiler, legacy-family adapters,
+  role-based provider routing, persistent workflow state, immutable preview
+  hashes, batched MCP tools, operation-level execution progress, result
+  provenance schemas, desktop model/capability browsers, acceptance/security
+  tests, and complete architecture documentation.
 - Added a comprehensive GitHub-ready README covering architecture, runtime
   flows, setup, outputs, tools, security, troubleshooting and every maintained
   repository file.

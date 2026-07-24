@@ -15,15 +15,9 @@ class PatchDesignTests(unittest.TestCase):
     def test_default_245_ghz_fr4_dimensions(self):
         design = calculate_rectangular_patch(PatchInputs())
 
-        self.assertTrue(
-            math.isclose(design.patch_width_mm, 37.583886, abs_tol=1e-5)
-        )
-        self.assertTrue(
-            math.isclose(design.patch_length_mm, 29.138326, abs_tol=1e-5)
-        )
-        self.assertTrue(
-            math.isclose(design.feed_width_mm, 3.111843, abs_tol=1e-5)
-        )
+        self.assertTrue(math.isclose(design.patch_width_mm, 37.583886, abs_tol=1e-5))
+        self.assertTrue(math.isclose(design.patch_length_mm, 29.138326, abs_tol=1e-5))
+        self.assertTrue(math.isclose(design.feed_width_mm, 3.111843, abs_tol=1e-5))
         self.assertGreater(design.inset_depth_mm, 0)
         self.assertLess(
             design.inset_depth_mm,
@@ -39,9 +33,7 @@ class PatchDesignTests(unittest.TestCase):
 
     def test_invalid_relative_permittivity_is_rejected(self):
         with self.assertRaises(ValueError):
-            calculate_rectangular_patch(
-                PatchInputs(relative_permittivity=1.0)
-            )
+            calculate_rectangular_patch(PatchInputs(relative_permittivity=1.0))
 
 
 class MonopoleDesignTests(unittest.TestCase):
@@ -77,9 +69,7 @@ class DipoleDesignTests(unittest.TestCase):
         self.assertEqual(design.lower_zmax_mm, -0.75)
         self.assertEqual(design.upper_zmin_mm, 0.75)
         self.assertEqual(design.upper_zmax_mm, 31.35)
-        self.assertTrue(
-            math.isclose(design.half_wavelength_mm, 61.182, abs_tol=0.01)
-        )
+        self.assertTrue(math.isclose(design.half_wavelength_mm, 61.182, abs_tol=0.01))
 
     def test_dipole_frequency_must_be_inside_sweep(self):
         with self.assertRaises(ValueError):

@@ -1,7 +1,7 @@
 import json
+import unittest
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
-import unittest
 from unittest.mock import patch
 
 from prompt2cst.agent import (
@@ -164,9 +164,9 @@ class AgentSafetyTests(unittest.TestCase):
         )
 
     def test_tool_arguments_must_be_json_object(self):
-        self.assertEqual(parse_tool_arguments('{"frequency_ghz": 2.45}'), {
-            "frequency_ghz": 2.45
-        })
+        self.assertEqual(
+            parse_tool_arguments('{"frequency_ghz": 2.45}'), {"frequency_ghz": 2.45}
+        )
         with self.assertRaises(ValueError):
             parse_tool_arguments(json.dumps([1, 2, 3]))
 
@@ -292,9 +292,7 @@ class AgentLoopSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.calls[1][0], "build_test_brick")
         self.assertTrue(session.calls[1][1]["confirm"])
         self.assertEqual(approval_requests[0][0], "build_test_brick")
-        self.assertFalse(
-            approval_requests[0][2]["write_performed"]
-        )
+        self.assertFalse(approval_requests[0][2]["write_performed"])
 
 
 if __name__ == "__main__":

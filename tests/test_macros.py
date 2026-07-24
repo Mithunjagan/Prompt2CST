@@ -2,8 +2,8 @@ import unittest
 
 from prompt2cst.cst_bridge import sanitize_project_name
 from prompt2cst.cst_macros import (
-    complete_patch_preview,
     complete_parametric_preview,
+    complete_patch_preview,
     complete_wire_monopole_preview,
     dipole_parametric_spec,
     patch_geometry_history,
@@ -60,7 +60,7 @@ class MacroGenerationTests(unittest.TestCase):
 
     def test_monopole_geometry_contains_ground_and_cylinder(self):
         macro = wire_monopole_geometry_history(self.monopole)
-        self.assertIn('With Cylinder', macro)
+        self.assertIn("With Cylinder", macro)
         self.assertIn('.Name "Monopole"', macro)
         self.assertIn('.OuterRadius "0.612"', macro)
         self.assertIn('.Zrange "1.5", "32.1"', macro)
@@ -68,7 +68,7 @@ class MacroGenerationTests(unittest.TestCase):
 
     def test_monopole_port_spans_feed_gap(self):
         macro = wire_monopole_port_history(self.monopole)
-        self.assertIn('With DiscretePort', macro)
+        self.assertIn("With DiscretePort", macro)
         self.assertIn('.Impedance "50"', macro)
         self.assertIn('.SetP1 "False", "0", "0", "0"', macro)
         self.assertIn('.SetP2 "False", "0", "0", "1.5"', macro)
@@ -99,9 +99,7 @@ class MacroGenerationTests(unittest.TestCase):
         )
 
     def test_parametric_preview_never_starts_solver(self):
-        preview = complete_parametric_preview(
-            dipole_parametric_spec(self.dipole)
-        )
+        preview = complete_parametric_preview(dipole_parametric_spec(self.dipole))
         self.assertNotIn("Solver.Start", "\n".join(preview.values()))
 
 

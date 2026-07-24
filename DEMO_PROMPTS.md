@@ -36,6 +36,9 @@ cylinders. Use PEC conductors, expanded-open boundaries and one 50 ohm
 discrete port. List every primitive and coordinate before any CST write.
 ```
 
-The custom builder supports only its declared primitives. Curves, helices,
-rotations, polygon extrusion, boolean geometry, waveguide ports, arrays and
-solver execution are not yet available.
+The DesignIR compiler supports validated bricks, cylinders, Boolean
+union/subtract/intersect, key transforms, discrete ports, boundaries, solver
+configuration, monitors and bounded parameter sweeps. The capability browser
+is authoritative. Curves, helices, polygon extrusion, circular arrays,
+waveguide ports, live solver execution and live result extraction remain
+unavailable until their CST 2026 compilers are verified.

@@ -30,6 +30,8 @@ ApplicationWindow {
     property string approvalTool: ""
     property string approvalArguments: ""
     property string approvalPreview: ""
+    property string infoTitle: ""
+    property string infoText: ""
 
     onClosing: root.backend.cancelPendingApproval()
 
@@ -270,7 +272,7 @@ ApplicationWindow {
                             }
                         }
                         Text {
-                            text: "12 typed MCP tools"
+                            text: "20 typed MCP tools"
                             color: root.ink
                             font.pixelSize: 14
                             font.weight: Font.DemiBold
@@ -382,7 +384,7 @@ ApplicationWindow {
                     spacing: root.compactHeight ? 10 : 14
 
                     ColumnLayout {
-                        Layout.preferredWidth: 370
+                        Layout.preferredWidth: 260
                         Layout.fillWidth: true
                         spacing: 7
                         Text {
@@ -487,7 +489,7 @@ ApplicationWindow {
                     }
 
                     ColumnLayout {
-                        Layout.preferredWidth: 430
+                        Layout.preferredWidth: 300
                         Layout.fillWidth: true
                         spacing: 7
                         Text {
@@ -536,12 +538,34 @@ ApplicationWindow {
 
                     LiquidButton {
                         Layout.alignment: Qt.AlignBottom
-                        Layout.preferredWidth: root.compactHeight ? 118 : 132
+                        Layout.preferredWidth: 90
                         Layout.preferredHeight: root.compactHeight ? 44 : 48
                         text: "Refresh"
                         iconText: "↻"
                         enabled: !root.backend.busy
                         onClicked: root.backend.loadModels(apiKey.text)
+                    }
+                    LiquidButton {
+                        Layout.alignment: Qt.AlignBottom
+                        Layout.preferredWidth: 82
+                        Layout.preferredHeight: root.compactHeight ? 44 : 48
+                        text: "Models"
+                        onClicked: {
+                            root.infoTitle = "Model orchestration";
+                            root.infoText = root.backend.modelOrchestrationText;
+                            infoDialog.open();
+                        }
+                    }
+                    LiquidButton {
+                        Layout.alignment: Qt.AlignBottom
+                        Layout.preferredWidth: 108
+                        Layout.preferredHeight: root.compactHeight ? 44 : 48
+                        text: "Capabilities"
+                        onClicked: {
+                            root.infoTitle = "CST capability browser";
+                            root.infoText = root.backend.capabilityText;
+                            infoDialog.open();
+                        }
                     }
                 }
             }
@@ -869,6 +893,14 @@ ApplicationWindow {
                             }
                         }
 
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Requirements  Â·  Calculations  Â·  Structure  Â·  Simulation  Â·  Validation  Â·  CST operations  Â·  Model activity  Â·  Execution activity  Â·  Results"
+                            color: "#6F8DA8"
+                            font.pixelSize: 9
+                            wrapMode: Text.WordWrap
+                        }
+
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
@@ -1092,6 +1124,78 @@ ApplicationWindow {
                         approvalDialog.close();
                         root.backend.resolveApproval(true);
                     }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: infoDialog
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(root.width - 120, 980)
+        height: Math.min(root.height - 100, 720)
+        padding: 0
+
+        background: GlassPanel {
+            cornerRadius: 30
+            glassColor: Qt.rgba(0.035, 0.065, 0.105, 0.98)
+            edgeColor: Qt.rgba(0.34, 0.82, 1.0, 0.30)
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 14
+            Text {
+                text: root.infoTitle
+                color: root.ink
+                font.pixelSize: 21
+                font.weight: Font.DemiBold
+            }
+            Text {
+                visible: root.infoTitle === "Model orchestration"
+                text: "Keys remain in process memory. Role assignments contain model IDs only."
+                color: root.muted
+                font.pixelSize: 11
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                radius: 18
+                color: Qt.rgba(0.012, 0.032, 0.055, 0.9)
+                border.width: 1
+                border.color: Qt.rgba(0.58, 0.75, 0.92, 0.15)
+                ScrollView {
+                    anchors.fill: parent
+                    anchors.margins: 14
+                    TextArea {
+                        width: parent.width
+                        readOnly: true
+                        selectByMouse: true
+                        text: root.infoText
+                        color: "#BBD0E4"
+                        wrapMode: TextEdit.Wrap
+                        font.family: "Cascadia Mono"
+                        font.pixelSize: 10
+                        background: null
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                LiquidButton {
+                    visible: root.infoTitle === "Model orchestration"
+                    text: "Use selected model for all roles"
+                    implicitWidth: 245
+                    onClicked: {
+                        root.backend.useModelForAllRoles(modelCombo.currentText);
+                        root.infoText = root.backend.modelOrchestrationText;
+                    }
+                }
+                Item { Layout.fillWidth: true }
+                LiquidButton {
+                    text: "Close"
+                    implicitWidth: 100
+                    onClicked: infoDialog.close()
                 }
             }
         }

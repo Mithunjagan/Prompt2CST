@@ -6,10 +6,7 @@ from prompt2cst.catalog import capability_catalog
 class CatalogTests(unittest.TestCase):
     def test_catalog_is_honest_about_supported_families(self):
         catalog = capability_catalog()
-        family_ids = {
-            family["id"]
-            for family in catalog["families"]
-        }
+        family_ids = {family["id"] for family in catalog["families"]}
 
         self.assertIn("wire_monopole", family_ids)
         self.assertIn("center_fed_dipole", family_ids)

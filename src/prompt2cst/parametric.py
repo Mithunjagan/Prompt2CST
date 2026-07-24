@@ -4,7 +4,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
 NAME_PATTERN = r"^[A-Za-z][A-Za-z0-9_-]{0,39}$"
 COORDINATE_LIMIT_MM = 5000.0
 
@@ -75,9 +74,7 @@ class CylinderPrimitive(StrictModel):
     @model_validator(mode="after")
     def validate_cylinder(self):
         if not self.axis_min_mm < self.axis_max_mm:
-            raise ValueError(
-                "cylinder axis_min_mm must be less than axis_max_mm"
-            )
+            raise ValueError("cylinder axis_min_mm must be less than axis_max_mm")
         if self.inner_radius_mm >= self.outer_radius_mm:
             raise ValueError(
                 "cylinder inner_radius_mm must be smaller than outer_radius_mm"
@@ -145,14 +142,8 @@ class ParametricAntennaSpec(StrictModel):
     @model_validator(mode="after")
     def validate_spec(self):
         if not self.sweep_start_ghz < self.sweep_stop_ghz:
-            raise ValueError(
-                "sweep_start_ghz must be less than sweep_stop_ghz"
-            )
-        if not (
-            self.sweep_start_ghz
-            <= self.frequency_ghz
-            <= self.sweep_stop_ghz
-        ):
+            raise ValueError("sweep_start_ghz must be less than sweep_stop_ghz")
+        if not (self.sweep_start_ghz <= self.frequency_ghz <= self.sweep_stop_ghz):
             raise ValueError("frequency_ghz must lie inside the sweep")
 
         material_names = [material.name for material in self.materials]
@@ -195,12 +186,8 @@ class ParametricAntennaSpec(StrictModel):
             "solids": len(self.solids),
             "ports": len(self.ports),
             "solid_types": {
-                "brick": sum(
-                    solid.kind == "brick" for solid in self.solids
-                ),
-                "cylinder": sum(
-                    solid.kind == "cylinder" for solid in self.solids
-                ),
+                "brick": sum(solid.kind == "brick" for solid in self.solids),
+                "cylinder": sum(solid.kind == "cylinder" for solid in self.solids),
             },
             "open_boundaries": self.include_open_boundaries,
             "farfield_monitor": self.include_farfield_monitor,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 FAMILY_OPTIONS = [
     (
         "Auto detect",
@@ -69,8 +68,7 @@ def compose_user_request(
         raise ValueError("mode must be preview or build")
 
     family_hint = (
-        "Choose the correct supported antenna family from the capability "
-        "catalog."
+        "Choose the correct supported antenna family from the capability catalog."
         if family_id == "auto"
         else f"Requested antenna family: {family_id}."
     )

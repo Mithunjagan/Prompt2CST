@@ -1,7 +1,7 @@
 # Contributing
 
-Prompt2CST accepts focused fixes, tests, documentation and new validated
-antenna families.
+Prompt2CST accepts focused fixes, tests, documentation, DesignIR capabilities,
+validators, deterministic compiler modules and antenna templates.
 
 ## Local development
 
@@ -18,16 +18,16 @@ antenna families.
 Most geometry and validation tests do not require CST. A real CST 2026 machine
 is required before declaring a new macro verified.
 
-## Adding an antenna family
+## Adding a capability or antenna template
 
-- Add a typed preview tool and a separate typed build tool.
-- Validate dimensions, frequency ranges, materials, names and primitive limits.
-- Keep preview generation free of CST writes.
-- Require `confirm=true` only after the desktop approval flow.
-- Add unit tests for valid, invalid and boundary inputs.
+- Prefer a template adapter into DesignIR over a new execution path.
+- Register the exact primitive/operation/port/simulation capability.
+- Add deterministic calculations and validation where required.
+- Confirm exact CST 2026 syntax before enabling a compiler capability.
+- Keep preview free of CST writes and require immutable-hash approval.
+- Add valid, invalid, boundary, deterministic-output and injection tests.
 - Inspect the generated project and History List inside CST 2026.
-- Document whether the family is verified, beta or geometry-only.
 
 Never add a general code-execution tool for LLM-generated Python, VBA, shell
-commands or CST macros. Do not add solver execution without a separate safety
-and Learning Edition mesh-budget design.
+commands or CST macros. Do not add solver/optimization execution without a
+separate preview, approval, duration and licence/mesh-budget design.

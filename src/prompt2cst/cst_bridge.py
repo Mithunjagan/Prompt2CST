@@ -1,26 +1,23 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import os
-from pathlib import Path
 import re
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Iterator
 
+from .adapters import (
+    dipole_to_design_ir,
+    monopole_to_design_ir,
+    parametric_to_design_ir,
+    patch_to_design_ir,
+)
+from .cst_compiler import CompiledDesign, compile_design
 from .cst_macros import (
-    complete_parametric_preview,
-    dipole_parametric_spec,
-    farfield_monitor_history,
-    frequency_and_boundary_history,
-    fr4_material_history,
-    patch_geometry_history,
     test_brick_history,
-    units_history,
-    wire_monopole_geometry_history,
-    wire_monopole_port_history,
 )
 from .design import DipoleDesign, MonopoleDesign, PatchDesign
 from .parametric import ParametricAntennaSpec
-
 
 DEFAULT_PROGID = "CSTStudio.Application.2026"
 
@@ -45,9 +42,7 @@ class CSTBridge:
         progid: str | None = None,
         output_dir: str | Path | None = None,
     ) -> None:
-        self.progid = progid or os.getenv(
-            "PROMPT2CST_CST_PROGID", DEFAULT_PROGID
-        )
+        self.progid = progid or os.getenv("PROMPT2CST_CST_PROGID", DEFAULT_PROGID)
         configured_output = output_dir or os.getenv(
             "PROMPT2CST_OUTPUT_DIR", DEFAULT_OUTPUT_DIR
         )
@@ -120,37 +115,25 @@ class CSTBridge:
         overwrite: bool = False,
         include_boundary_setup: bool = True,
     ) -> dict:
-        output_path = self._output_path(project_name, overwrite)
-
-        with self._application() as app:
-            project = app.NewMWS()
-            project.AddToHistory("Prompt2CST: Set units", units_history())
-            project.AddToHistory(
-                "Prompt2CST: Define FR4",
-                fr4_material_history(design),
-            )
-            project.AddToHistory(
-                "Prompt2CST: Build patch geometry",
-                patch_geometry_history(design),
-            )
-            if include_boundary_setup:
-                project.AddToHistory(
-                    "Prompt2CST: Frequency and boundaries",
-                    frequency_and_boundary_history(design),
-                )
-            project.SaveAs(str(output_path), True)
-
+        design_ir = patch_to_design_ir(design, project_name)
+        if not include_boundary_setup:
+            design_ir.boundaries = None
+            design_ir.solver = None
+        result = self.execute_compiled_design(
+            compile_design(design_ir),
+            project_name,
+            overwrite,
+        )
         return {
+            **result,
             "status": "created",
-            "write_performed": True,
-            "project_path": str(output_path),
             "design": design.to_dict(),
+            "design_ir_schema_version": design_ir.schema_version,
             "boundary_setup_included": include_boundary_setup,
-            "solver_run": False,
             "warnings": [
+                *result["warnings"],
                 "The inset depth is a first-pass analytical estimate.",
-                "No excitation port has been created in v0.1.",
-                "The solver has not been run.",
+                "No excitation port is created by the legacy patch adapter.",
             ],
         }
 
@@ -163,45 +146,31 @@ class CSTBridge:
         include_boundary_setup: bool = True,
         include_farfield_monitor: bool = True,
     ) -> dict:
-        output_path = self._output_path(project_name, overwrite)
-
-        with self._application() as app:
-            project = app.NewMWS()
-            project.AddToHistory("Prompt2CST: Set units", units_history())
-            project.AddToHistory(
-                "Prompt2CST: Build wire monopole geometry",
-                wire_monopole_geometry_history(design),
-            )
-            if include_port:
-                project.AddToHistory(
-                    "Prompt2CST: Create 50 ohm discrete port",
-                    wire_monopole_port_history(design),
-                )
-            if include_boundary_setup:
-                project.AddToHistory(
-                    "Prompt2CST: Frequency and open boundaries",
-                    frequency_and_boundary_history(design),
-                )
-            if include_farfield_monitor:
-                project.AddToHistory(
-                    "Prompt2CST: Farfield monitor",
-                    farfield_monitor_history(design),
-                )
-            project.SaveAs(str(output_path), True)
-
+        design_ir = monopole_to_design_ir(design, project_name)
+        if not include_port:
+            design_ir.excitations = []
+        if not include_boundary_setup:
+            design_ir.boundaries = None
+            design_ir.solver = None
+            design_ir.monitors = []
+        elif not include_farfield_monitor:
+            design_ir.monitors = []
+        result = self.execute_compiled_design(
+            compile_design(design_ir),
+            project_name,
+            overwrite,
+        )
         return {
+            **result,
             "status": "created",
-            "write_performed": True,
-            "project_path": str(output_path),
             "design": design.to_dict(),
+            "design_ir_schema_version": design_ir.schema_version,
             "port_created": include_port,
             "boundary_setup_included": include_boundary_setup,
             "farfield_monitor_created": include_farfield_monitor,
-            "solver_run": False,
             "warnings": [
-                "The CST 2026 monopole macro requires validation on the target installation.",
-                "No solver was run and no S-parameter or far-field results were extracted.",
-                "Mesh-cell count has not been verified against the Learning Edition limit.",
+                *result["warnings"],
+                "The compiled CST 2026 monopole requires target-installation inspection.",
             ],
         }
 
@@ -211,13 +180,16 @@ class CSTBridge:
         project_name: str,
         overwrite: bool = False,
     ) -> dict:
-        result = self.build_parametric_antenna(
-            spec=dipole_parametric_spec(design),
-            project_name=project_name,
-            overwrite=overwrite,
+        design_ir = dipole_to_design_ir(design, project_name)
+        result = self.execute_compiled_design(
+            compile_design(design_ir),
+            project_name,
+            overwrite,
         )
+        result["status"] = "created"
         result["family"] = "center_fed_dipole"
         result["design"] = design.to_dict()
+        result["design_ir_schema_version"] = design_ir.schema_version
         result["warnings"].insert(
             0,
             "The center-fed dipole family is beta and requires CST inspection.",
@@ -230,37 +202,85 @@ class CSTBridge:
         project_name: str,
         overwrite: bool = False,
     ) -> dict:
-        output_path = self._output_path(project_name, overwrite)
-        history = complete_parametric_preview(spec)
-
-        with self._application() as app:
-            project = app.NewMWS()
-            labels = {
-                "units": "Prompt2CST: Set units",
-                "materials": "Prompt2CST: Define custom materials",
-                "geometry": "Prompt2CST: Build parametric geometry",
-                "discrete_ports": "Prompt2CST: Create discrete ports",
-                "frequency_and_boundaries": (
-                    "Prompt2CST: Frequency and open boundaries"
-                ),
-                "farfield_monitor": "Prompt2CST: Farfield monitor",
-            }
-            for key, commands in history.items():
-                project.AddToHistory(labels[key], commands)
-            project.SaveAs(str(output_path), True)
-
+        design_ir = parametric_to_design_ir(spec)
+        design_ir.project.name = project_name
+        result = self.execute_compiled_design(
+            compile_design(design_ir),
+            project_name,
+            overwrite,
+        )
         return {
+            **result,
             "status": "created",
-            "write_performed": True,
-            "project_path": str(output_path),
             "family": "custom_parametric",
             "spec": spec.model_dump(mode="json"),
             "summary": spec.summary(),
+            "design_ir_schema_version": design_ir.schema_version,
+            "warnings": [
+                *result["warnings"],
+                "The compatibility adapter is limited to validated DesignIR capabilities.",
+            ],
+        }
+
+    def execute_compiled_design(
+        self,
+        compiled: CompiledDesign,
+        project_name: str,
+        overwrite: bool = False,
+        on_completed=None,
+        is_cancelled=None,
+    ) -> dict:
+        """Execute validated compiler output in a new CST project.
+
+        Each history operation is recorded independently so a caller can
+        persist progress and report the exact failure. The project is saved
+        only after every operation completes.
+        """
+
+        output_path = self._output_path(project_name, overwrite)
+        completed: list[dict] = []
+        current = None
+        try:
+            with self._application() as app:
+                project = app.NewMWS()
+                for operation in compiled.operations:
+                    current = operation
+                    if is_cancelled and is_cancelled():
+                        raise CSTExecutionCancelled(
+                            f"Execution cancelled before operation {operation.index}"
+                        )
+                    project.AddToHistory(operation.label, operation.history)
+                    item = {
+                        "index": operation.index,
+                        "operation_id": operation.operation_id,
+                        "label": operation.label,
+                    }
+                    completed.append(item)
+                    if on_completed:
+                        on_completed(item)
+                project.SaveAs(str(output_path), True)
+        except CSTExecutionCancelled:
+            raise
+        except Exception as exc:
+            raise CSTExecutionError(
+                operation_index=current.index if current else 0,
+                operation_id=current.operation_id
+                if current
+                else "project_initialization",
+                label=current.label if current else "Create new CST project",
+                completed_operations=completed,
+                cause=exc,
+            ) from exc
+
+        return {
+            "status": "completed",
+            "write_performed": True,
+            "project_path": str(output_path),
+            "completed_operations": completed,
             "solver_run": False,
             "warnings": [
-                "The parametric builder is limited to validated primitives.",
-                "No solver was run and no results were extracted.",
-                "Mesh-cell count has not been verified against the Learning Edition limit.",
+                "The approved plan was compiled and written; the solver was not started.",
+                "Inspect the CST 2026 History List and geometry before simulation.",
             ],
         }
 
@@ -303,3 +323,27 @@ def sanitize_project_name(project_name: str) -> str:
     if not candidate:
         raise ValueError("project_name must contain a letter or number")
     return candidate[:80]
+
+
+class CSTExecutionCancelled(RuntimeError):
+    pass
+
+
+class CSTExecutionError(RuntimeError):
+    def __init__(
+        self,
+        operation_index: int,
+        operation_id: str,
+        label: str,
+        completed_operations: list[dict],
+        cause: Exception,
+    ) -> None:
+        self.operation_index = operation_index
+        self.operation_id = operation_id
+        self.label = label
+        self.completed_operations = completed_operations
+        self.cause_type = type(cause).__name__
+        super().__init__(
+            f"CST operation {operation_index} ({operation_id}, {label}) failed: "
+            f"{self.cause_type}: {cause}"
+        )
