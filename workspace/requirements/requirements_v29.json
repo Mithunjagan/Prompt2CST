@@ -1,0 +1,8 @@
+{
+  "constraints": {},
+  "created_at": 1789323524.4201534,
+  "frequency_max_ghz": 2.5725000000000002,
+  "frequency_min_ghz": 2.3275,
+  "goal": "Design SmartGlasses at 2.45 GHz",
+  "target_s11_db": -10.0
+}

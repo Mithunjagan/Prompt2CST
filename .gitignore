@@ -19,3 +19,7 @@ outputs/
 .pytest_cache/
 .coverage
 htmlcov/
+.agent_state/
+*.db
+*.sqlite
+*.sqlite3

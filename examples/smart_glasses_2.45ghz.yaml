@@ -1,0 +1,53 @@
+# Smart Glasses 2.45 GHz Bluetooth/Wi-Fi Wearable Antenna Specification
+name: Smart_Glasses_BT_2.45GHz
+description: Frame-integrated PIFA/meander antenna for smart glasses operating at 2.45 GHz with head-loading SAR constraints.
+
+application:
+  type: wearable
+  device: smart_glasses
+  form_factor: frame_temple_integrated
+  tissue_loading:
+    model: 4_layer_head
+    distance_skin_mm: 5.0
+    layers:
+      - skin
+      - fat
+      - muscle
+      - bone
+
+requirements:
+  frequency:
+    center_hz: 2.45e9
+    min_hz: 2.40e9
+    max_hz: 2.50e9
+    bandwidth_mhz: 100.0
+  impedance:
+    target_re_ohm: 50.0
+    target_im_ohm: 0.0
+  s11:
+    target_db: -10.0
+    min_acceptable_db: -6.0
+  volume_constraints:
+    max_length_mm: 45.0
+    max_width_mm: 15.0
+    max_height_mm: 6.0
+
+candidate_topologies:
+  - pifa
+  - meander
+  - frame_integrated
+
+staged_optimization:
+  stage_a:
+    goal: resonance_tuning
+    target_freq_hz: 2.45e9
+    priority_parameters: [length_mm, feed_offset_mm]
+  stage_b:
+    goal: impedance_matching
+    target_re_ohm: 50.0
+    target_im_ohm: 0.0
+    priority_parameters: [short_pin_width_mm, feed_offset_mm]
+  stage_c:
+    goal: s11_bandwidth
+    target_s11_db: -10.0
+    priority_parameters: [patch_width_mm, height_mm]

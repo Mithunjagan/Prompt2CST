@@ -12,6 +12,7 @@ import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from .cost_guard import CostGuard, get_cost_guard
 from .orchestration import redact_secrets
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -231,6 +232,7 @@ class OpenRouterAgent:
         log: LogCallback | None = None,
         base_url: str = OPENROUTER_BASE_URL,
         model_candidates: list[str] | tuple[str, ...] | None = None,
+        cost_guard: CostGuard | None = None,
     ) -> None:
         if not api_key.strip():
             raise ValueError("An OpenRouter API key is required")
@@ -244,6 +246,8 @@ class OpenRouterAgent:
         )
         self.model = self.model_candidates[0]
         self.base_url = base_url.rstrip("/")
+        self.cost_guard = cost_guard or get_cost_guard()
+        self.cost_guard.check_remote_provider("openrouter", self.base_url)
         self.log = log or (lambda _message: None)
 
     @property
@@ -255,6 +259,7 @@ class OpenRouterAgent:
         }
 
     async def list_models(self) -> list[str]:
+        self.cost_guard.check_remote_provider("openrouter", self.base_url)
         timeout = httpx.Timeout(30.0, connect=15.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(
@@ -269,6 +274,7 @@ class OpenRouterAgent:
         user_prompt: str,
         approve_write: ApprovalCallback,
     ) -> str:
+        self.cost_guard.check_remote_provider("openrouter", self.base_url)
         if not user_prompt.strip():
             raise ValueError("Enter an antenna request")
 

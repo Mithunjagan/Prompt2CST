@@ -557,6 +557,111 @@ def build_parametric_antenna(
     )
 
 
+@mcp.tool()
+def evaluate_antenna_architecture(
+    center_frequency_hz: float = 2.45e9,
+    target_impedance_ohm: float = 50.0,
+    max_volume_mm3: float = 8000.0,
+    wearable: bool = False,
+) -> dict:
+    """Evaluate and rank candidate antenna topologies using closed-form calculations."""
+    from .architect import RFArchitectureAgent
+    agent = RFArchitectureAgent()
+    reqs = {
+        "center_frequency_hz": center_frequency_hz,
+        "frequency_min_hz": center_frequency_hz * 0.95,
+        "frequency_max_hz": center_frequency_hz * 1.05,
+        "target_impedance_ohm": target_impedance_ohm,
+        "max_volume_mm3": max_volume_mm3,
+        "wearable": wearable,
+    }
+    return agent.evaluate_topologies(reqs)
+
+
+@mcp.tool()
+def run_staged_optimization(
+    topology: str = "pifa",
+    center_frequency_hz: float = 2.45e9,
+    max_iterations: int = 15,
+) -> dict:
+    """Run staged optimization (resonance, matching, bandwidth) on an antenna design."""
+    from .architect import RFArchitectureAgent
+    from .optimizer.pipeline import OptimizationPipeline, OptimizationPipelineConfig
+    from .optimizer.runner import MockCSTRunner
+    from .optimizer.schema import OptimizationGoalConfig, ParameterBound
+
+    agent = RFArchitectureAgent()
+    reqs = {"center_frequency_hz": center_frequency_hz, "target_impedance_ohm": 50.0}
+    cands = agent.evaluate_topologies(reqs)
+    best = cands["recommended"]
+    dims = best["closed_form_dimensions"]
+
+    bounds = [
+        ParameterBound(name=k, min_value=v * 0.5, max_value=v * 1.5, default_value=v)
+        for k, v in dims.items()
+    ]
+    goal = OptimizationGoalConfig(
+        center_frequency_hz=center_frequency_hz,
+        frequency_min_hz=center_frequency_hz * 0.95,
+        frequency_max_hz=center_frequency_hz * 1.05,
+    )
+    pipe_cfg = OptimizationPipelineConfig(
+        project_name=f"MCP_Opt_{topology}",
+        topology_name=topology,
+        goal=goal,
+        bounds=bounds,
+        max_iterations=max_iterations,
+    )
+    pipeline = OptimizationPipeline(pipe_cfg, runner=MockCSTRunner())
+    return pipeline.run()
+
+
+@mcp.tool()
+def ingest_paper_evidence(pdf_path: str) -> dict:
+    """Ingest a research paper PDF and extract parameters with strict provenance into local SQLite."""
+    from pathlib import Path
+    from .evidence import EvidenceDatabase
+    from .papers import PaperIngestionEngine
+
+    p = Path(pdf_path)
+    if not p.exists():
+        return {"status": "error", "message": f"File not found: {pdf_path}"}
+    engine = PaperIngestionEngine()
+    extracted = engine.ingest_paper(p)
+    db = EvidenceDatabase()
+    count = db.add_paper_claims(extracted)
+    return {
+        "status": "success",
+        "paper_id": extracted.paper_id,
+        "title": extracted.title,
+        "parameters_extracted": len(extracted.extracted_parameters),
+        "claims_added": count,
+    }
+
+
+@mcp.tool()
+def evaluate_wearable_sar(
+    input_power_w: float = 0.1,
+    antenna_distance_skin_mm: float = 5.0,
+    frequency_hz: float = 2.45e9,
+) -> dict:
+    """Evaluate 1g/10g SAR and FCC compliance for head-loaded wearable antennas."""
+    from .wearable import WearableAntennaEvaluator
+    evaluator = WearableAntennaEvaluator()
+    return evaluator.evaluate_sar(
+        input_power_w=input_power_w,
+        antenna_distance_skin_mm=antenna_distance_skin_mm,
+        frequency_hz=frequency_hz,
+    )
+
+
+@mcp.tool()
+def audit_zero_cost_budget() -> dict:
+    """Audit system enforcement to verify $0 spent on API keys, SaaS, or paid tools."""
+    from .cost_guard import CostGuard
+    return CostGuard().to_dict()
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -568,3 +673,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

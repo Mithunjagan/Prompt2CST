@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from prompt2cst.cost_guard import CostGuard
 from prompt2cst.agent import (
     OpenRouterAgent,
     filter_tool_capable_models,
@@ -266,7 +267,7 @@ class AgentLoopSafetyTests(unittest.IsolatedAsyncioTestCase):
             patch("prompt2cst.agent.prompt2cst_session", fake_session),
             patch("prompt2cst.agent.httpx.AsyncClient", return_value=client),
         ):
-            result = await OpenRouterAgent("key", "model").run(
+            result = await OpenRouterAgent("key", "model", cost_guard=CostGuard(zero_cost_mode=False)).run(
                 "Build a test brick",
                 approve_write=lambda *_args: False,
             )
@@ -291,7 +292,7 @@ class AgentLoopSafetyTests(unittest.IsolatedAsyncioTestCase):
             patch("prompt2cst.agent.prompt2cst_session", fake_session),
             patch("prompt2cst.agent.httpx.AsyncClient", return_value=client),
         ):
-            result = await OpenRouterAgent("key", "model").run(
+            result = await OpenRouterAgent("key", "model", cost_guard=CostGuard(zero_cost_mode=False)).run(
                 "Build a test brick",
                 approve_write=approve,
             )
@@ -325,6 +326,7 @@ class AgentLoopSafetyTests(unittest.IsolatedAsyncioTestCase):
             "key",
             "primary-model",
             model_candidates=("fallback-model",),
+            cost_guard=CostGuard(zero_cost_mode=False),
         )
 
         response = await agent._request_chat_completion(client, 1, [], [])

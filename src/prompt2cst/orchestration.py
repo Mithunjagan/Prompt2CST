@@ -12,6 +12,8 @@ from typing import Any, Protocol, TypeVar
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from .cost_guard import CostGuard, get_cost_guard
+
 
 class ModelRole(StrEnum):
     REQUIREMENTS = "requirements_model"
@@ -85,12 +87,15 @@ class OpenAICompatibleProvider:
         name: str = "openai_compatible",
         max_retries: int = 2,
         log=None,
+        cost_guard: CostGuard | None = None,
     ):
         if not api_key.strip():
             raise ValueError("provider API key is required")
         self.api_key = api_key.strip()
         self.base_url = base_url.rstrip("/")
         self.name = name
+        self.cost_guard = cost_guard or get_cost_guard()
+        self.cost_guard.check_remote_provider(self.name, self.base_url)
         self.max_retries = max(0, min(max_retries, 4))
         self.log = log or (lambda _event: None)
 
@@ -103,6 +108,7 @@ class OpenAICompatibleProvider:
         metadata: dict[str, Any] | None = None,
         model: str = "",
     ) -> ModelGeneration:
+        self.cost_guard.check_remote_provider(self.name, self.base_url)
         accounting = ModelAccounting()
         last_error: Exception | None = None
         started = time.monotonic()
@@ -204,6 +210,7 @@ class OpenAICompatibleProvider:
         raise ModelProviderError("Structured generation failed")
 
     async def health(self) -> dict[str, Any]:
+        self.cost_guard.check_remote_provider(self.name, self.base_url)
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.get(

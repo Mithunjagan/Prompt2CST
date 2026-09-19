@@ -5,11 +5,17 @@ from unittest.mock import patch
 
 from prompt2cst.adapters import monopole_to_design_ir
 from prompt2cst.design import MonopoleInputs, calculate_wire_monopole
-from prompt2cst.gui import Prompt2CSTController
+try:
+    from prompt2cst.gui import Prompt2CSTController
+    PYSIDE6_AVAILABLE = True
+except ImportError:
+    PYSIDE6_AVAILABLE = False
+
 from prompt2cst.plan_service import PlanService
 from prompt2cst.workflow import WorkflowState
 
 
+@unittest.skipUnless(PYSIDE6_AVAILABLE, "PySide6 is not installed")
 class ControllerStateTests(unittest.TestCase):
     def test_clear_invalidates_pending_preview_before_removing_session(self):
         with tempfile.TemporaryDirectory() as directory:

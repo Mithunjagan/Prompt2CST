@@ -8,7 +8,9 @@ def format_number(value: float) -> str:
 
 
 def resolved(expression, parameters: dict[str, float]) -> str:
-    return format_number(evaluate_expression(expression, parameters))
+    if isinstance(expression, str):
+        return expression
+    return format_number(float(expression))
 
 
 def object_name(component: str, name: str) -> str:

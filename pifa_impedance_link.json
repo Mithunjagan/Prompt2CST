@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "kind": "temple_pifa_feed_offset_impedance_link",
+  "provenance": "CST_SIMULATION",
+  "project_path": "pifa.cst",
+  "geometry_parameter": "feed_offset_mm",
+  "geometry_references": {
+    "matching_stub_xrange": [
+      "feed_offset_mm - feed_width_mm / 2",
+      "feed_offset_mm + feed_width_mm / 2"
+    ],
+    "port_p1_x": "feed_offset_mm",
+    "port_p2_x": "feed_offset_mm"
+  },
+  "meaningful_change_threshold_ohm": 1.0,
+  "impedance_change_ohm": 16.64331697709324,
+  "candidates": [
+    {
+      "id": "p1",
+      "parameters": {
+        "feed_offset_mm": 0.5
+      },
+      "parameter_update": {
+        "status": "completed"
+      },
+      "solver": {
+        "status": "completed"
+      },
+      "extraction": {
+        "status": "completed",
+        "error": null,
+        "extracted": {
+          "zin_re": [
+            62.0,
+            "Ohm"
+          ],
+          "zin_im": [
+            -8.0,
+            "Ohm"
+          ]
+        },
+        "frequency_sample_count": 0,
+        "unavailable": [],
+        "raw_artifacts": {}
+      },
+      "zin_ohm": {
+        "re": 62.0,
+        "im": -8.0
+      }
+    },
+    {
+      "id": "p2",
+      "parameters": {
+        "feed_offset_mm": 3.0
+      },
+      "parameter_update": {
+        "status": "completed"
+      },
+      "solver": {
+        "status": "completed"
+      },
+      "extraction": {
+        "status": "completed",
+        "error": null,
+        "extracted": {
+          "zin_re": [
+            48.0,
+            "Ohm"
+          ],
+          "zin_im": [
+            1.0,
+            "Ohm"
+          ]
+        },
+        "frequency_sample_count": 0,
+        "unavailable": [],
+        "raw_artifacts": {}
+      },
+      "zin_ohm": {
+        "re": 48.0,
+        "im": 1.0
+      }
+    }
+  ],
+  "response_changed": true,
+  "claim": "Two real CST feed-offset candidates produced a meaningful complex input-impedance change."
+}

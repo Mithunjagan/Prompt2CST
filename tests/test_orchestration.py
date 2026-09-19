@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from pydantic import BaseModel, ConfigDict
+from prompt2cst.cost_guard import CostGuard
 
 from prompt2cst.orchestration import (
     MockProvider,
@@ -116,6 +117,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
             api_key="test-key",
             base_url="https://provider.invalid/v1",
             max_retries=1,
+            cost_guard=CostGuard(zero_cost_mode=False),
         )
         with patch(
             "prompt2cst.orchestration.httpx.AsyncClient",
@@ -156,6 +158,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
             api_key="test-key",
             base_url="https://provider.invalid/v1",
             max_retries=1,
+            cost_guard=CostGuard(zero_cost_mode=False),
         )
 
         with patch(
@@ -205,6 +208,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
             api_key="test-key",
             base_url="https://provider.invalid/v1",
             max_retries=1,
+            cost_guard=CostGuard(zero_cost_mode=False),
         )
 
         with patch(

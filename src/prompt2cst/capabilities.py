@@ -42,6 +42,7 @@ _SUPPORTED = {
     "monitor.surface_current": ("frequency",),
     "mesh.global": ("lines_per_wavelength",),
     "sweep.parameter": ("parameter",),
+    "optimization.goal": ("goal_type",),
 }
 
 _UNSUPPORTED = {
@@ -56,7 +57,6 @@ _UNSUPPORTED = {
     "transform.circular_array": ("transform.linear_array",),
     "port.waveguide": ("port.discrete",),
     "mesh.local_refinement": ("mesh.global",),
-    "optimization.goal": ("sweep.parameter",),
     "results.live_extraction": (),
 }
 

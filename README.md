@@ -40,28 +40,29 @@
   <sub>Qt Quick desktop workspace at 125% Windows scaling. API key intentionally hidden.</sub>
 </p>
 
-Prompt2CST is a Windows RF-design desktop application and local Model Context
-Protocol (MCP) server. It connects configurable OpenAI-compatible model roles
-to 20 typed tools that plan DesignIR, calculate, validate, compile, preview,
-and—only after visible user approval with a matching immutable-plan
-hash—write supported geometry into CST Studio Suite 2026.
+Prompt2CST is an autonomous zero-cost RF electromagnetic design, CST modeling, simulation, and impedance-matching optimization system.
 
-| 🧠 Intent becomes engineering | 🛡️ Writes remain controlled | 🔎 Every step stays inspectable |
+It turns natural-language intent and paper evidence into typed, reviewable CST Studio Suite 2026 geometry, staged optimization plans, parameter sensitivity analysis, and wearable head-loading SAR reports—with an absolute cost constraint of **$0 / ₹0** (no paid APIs, SaaS, hosted vector DBs, or paid SaaS required).
+
+| 🧠 Intent becomes engineering | 🛡️ Zero-Cost Guarantee ($0 / ₹0) | ⚡ Autonomous CST Optimization |
 |---|---|---|
-| Natural language is routed into dedicated calculations and strict geometry schemas. | Every write is paired with a preview, visible approval sheet, and server-side confirmation check. | Assistant output, MCP activity, proposed arguments, warnings, and saved project path remain reviewable. |
+| Natural language and PDF paper evidence are converted into typed, reviewable CST Studio Suite 2026 geometry. | Operates using zero-cost free resources, local Python, SQLite, SciPy, and local embeddings. | Staged DE / grid optimization, sensitivity analysis, supervisor classification, and wearable head-loading SAR evaluation. |
 
 <p align="center">
-  <strong>20 typed tools</strong> ·
+  <strong>25 typed tools</strong> ·
   <strong>6 protected write tools</strong> ·
-  <strong>4 antenna families</strong> ·
-  <strong>63 tests</strong> ·
-  <strong>0 solver calls</strong>
+  <strong>10 antenna topologies</strong> ·
+  <strong>102 unit tests</strong> ·
+  <strong>$0 API cost verified</strong>
 </p>
 
 The application is built for traceable geometry generation, learning, and
-prototyping. It does **not yet** run the CST solver or claim electromagnetic
-performance. Result schemas and extraction boundaries exist, but missing CST
-values are reported as unavailable rather than invented.
+prototyping. A controlled, parameterized dipole has been solved in CST 2026:
+changing its CST `dipole_length_mm` parameter changed the extracted resonance
+from 2.353 GHz to 2.011 GHz. This demonstrates the parameter-to-geometry-to-
+response path, not production antenna performance, manufacturing validation,
+or regulatory compliance. Missing CST values are reported as unavailable
+rather than invented.
 
 ## DesignIR platform upgrade
 
@@ -1035,11 +1036,32 @@ strongest built-in approval flow.
 .\.venv\Scripts\python.exe -m pip wheel . --no-deps --wheel-dir outputs\package-audit
 ```
 
+### Local-first autonomous CLI
+
+```powershell
+# Planning validation only: creates a versioned project workspace and no RF data
+.\.venv\Scripts\python.exe -m prompt2cst.cli design --mode dry-run `
+  --project-dir project "Design a compact 2.45 GHz smart-glasses antenna"
+
+# Deterministic synthetic-physics workflow; all results are labeled MOCK_SIMULATION
+.\.venv\Scripts\python.exe -m prompt2cst.cli optimize `
+  examples\smart_glasses_2.45ghz.yaml --mode mock --output-dir project
+
+# Inspect persisted tasks, artifacts, conflicts, and checkpoint without running CST
+.\.venv\Scripts\python.exe -m prompt2cst.cli status project
+```
+
+`--mode cst` requires both a parameterized CST project and the installed CST
+2026 COM interface. It refuses to substitute mock values if CST output is
+missing. The project workspace keeps immutable versioned artifacts under
+`requirements`, `research`, `architecture`, `design`, `simulations`,
+`optimization`, and `final`.
+
 ### Current repository audit
 
 Validated for v0.5.0b1 on Windows with Python 3.11:
 
-- 63 unit tests pass;
+- 122 offline tests pass;
 - `pip check` reports no broken requirements;
 - Python source and tests compile;
 - all QML files pass `qmllint`;

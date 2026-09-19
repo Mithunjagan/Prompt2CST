@@ -6,6 +6,8 @@ from prompt2cst.adapters import (
     dipole_to_design_ir,
     monopole_to_design_ir,
     patch_to_design_ir,
+    TemplePifaInputs,
+    temple_pifa_to_design_ir,
 )
 from prompt2cst.cst_compiler import compile_design
 from prompt2cst.design import (
@@ -157,6 +159,44 @@ class DesignIRTests(unittest.TestCase):
                 compiled = compile_design(design)
                 self.assertGreater(len(compiled.operations), 3)
                 self.assertNotIn("Solver.Start", compiled.normalized_history)
+
+    def test_dipole_geometry_and_port_reference_cst_parameters(self):
+        design = dipole_to_design_ir(calculate_center_fed_dipole(DipoleInputs()))
+        compiled = compile_design(design).normalized_history
+
+        self.assertIn('StoreParameter "dipole_length_mm", "61.2"', compiled)
+        self.assertIn('StoreParameter "feed_gap_mm", "1.5"', compiled)
+        self.assertIn(
+            '.Zrange "-feed_gap_mm / 2 - dipole_length_mm / 2", "-feed_gap_mm / 2"',
+            compiled,
+        )
+        self.assertIn(
+            '.Zrange "feed_gap_mm / 2", "feed_gap_mm / 2 + dipole_length_mm / 2"',
+            compiled,
+        )
+        self.assertIn('.SetP1 "False", "0", "0", "-feed_gap_mm / 2"', compiled)
+        self.assertIn('.SetP2 "False", "0", "0", "feed_gap_mm / 2"', compiled)
+
+    def test_temple_pifa_compiles_with_parameter_linked_geometry_and_port(self):
+        design = temple_pifa_to_design_ir(TemplePifaInputs())
+        report = validate_design(design)
+        self.assertFalse(report.blocking, report.to_dict())
+        compiled = compile_design(design).normalized_history
+        for name in (
+            "radiator_length_mm", "radiator_width_mm", "short_length_mm",
+            "feed_offset_mm", "feed_width_mm", "ground_length_mm", "ground_width_mm",
+            "gap_mm", "stub_length_mm",
+        ):
+            self.assertIn(f'StoreParameter "{name}"', compiled)
+        self.assertIn('.Yrange "ground_length_mm - radiator_length_mm", "ground_length_mm"', compiled)
+        self.assertIn('.Xrange "feed_offset_mm - feed_width_mm / 2", "feed_offset_mm + feed_width_mm / 2"', compiled)
+        self.assertIn('.SetP1 "False", "feed_offset_mm", "ground_length_mm - gap_mm", "copper_thickness_mm"', compiled)
+        self.assertIn('.SetP2 "False", "feed_offset_mm", "ground_length_mm - gap_mm", "pifa_height_mm"', compiled)
+        self.assertNotIn("Solver.Start", compiled)
+
+    def test_temple_pifa_rejects_invalid_temple_envelope(self):
+        with self.assertRaisesRegex(ValueError, "fit the ground"):
+            temple_pifa_to_design_ir(TemplePifaInputs(radiator_length_mm=40, stub_length_mm=4, ground_length_mm=42))
 
     def test_printed_monopole_union_compiles(self):
         design = printed_monopole()
