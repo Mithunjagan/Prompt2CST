@@ -573,7 +573,12 @@ class CSTBridge:
             project = app.Active3D()
             self._trace_com("Active3D", "completed", project_path=str(path), parameter=name)
             self._trace_com("RestoreDoubleParameter", "started", project_path=str(path), parameter=name)
-            value = float(project.RestoreDoubleParameter(str(name)))
+            if hasattr(project, "RestoreDoubleParameter"):
+                value = float(project.RestoreDoubleParameter(str(name)))
+            elif hasattr(project, "GetParameter"):
+                value = float(project.GetParameter(str(name)))
+            else:
+                value = float(getattr(project, "RestoreDoubleParameter", getattr(project, "GetParameter"))(str(name)))
             self._trace_com("RestoreDoubleParameter", "completed", project_path=str(path), parameter=name, value=value)
             return value
 

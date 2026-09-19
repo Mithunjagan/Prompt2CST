@@ -157,6 +157,9 @@ class MacroGenerationTests(unittest.TestCase):
 
     def test_read_parameter_reopens_saved_cst_project(self):
         class FakeProject:
+            def RestoreDoubleParameter(self, name):
+                self.name = name
+                return "0.5"
             def GetParameter(self, name):
                 self.name = name
                 return "0.5"

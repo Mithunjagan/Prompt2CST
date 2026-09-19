@@ -51,7 +51,10 @@ class RepositoryReleaseTests(unittest.TestCase):
             ".yml",
             ".txt",
         }
+        ignored_dirs = {".git", ".venv", "build", "dist", "__pycache__", ".pytest_cache"}
         for path in ROOT.rglob("*"):
+            if any(part in ignored_dirs for part in path.parts):
+                continue
             if not path.is_file() or path.suffix.lower() not in allowed_suffixes:
                 continue
             self.assertIsNone(
