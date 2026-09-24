@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from prompt2cst.optimizer.algorithms import DifferentialEvolutionOptimizer, ParameterSweepOptimizer
 from prompt2cst.optimizer.cache import SimulationResultCache
@@ -74,6 +76,35 @@ class TestOptimizer(unittest.TestCase):
         self.assertIsNotNone(res.best_params)
         self.assertIsNotNone(res.best_cost)
 
+    def test_de_fallback_respects_exact_candidate_budget(self):
+        optimizer = DifferentialEvolutionOptimizer(
+            population_size=10, seed=42, max_total_evaluations=7
+        )
+        with patch.dict(sys.modules, {"scipy": None, "scipy.optimize": None}):
+            result = optimizer.optimize(
+                cost_fn=lambda params: params["length_mm"] ** 2,
+                param_bounds={"length_mm": (1.0, 5.0)},
+                max_iterations=5,
+            )
+        self.assertEqual(result.evaluations, 7)
+        self.assertEqual(len(result.history), 7)
+
+    def test_de_scipy_respects_exact_candidate_budget(self):
+        try:
+            import scipy.optimize  # noqa: F401
+        except ImportError:
+            self.skipTest("SciPy is not installed")
+        optimizer = DifferentialEvolutionOptimizer(
+            population_size=10, seed=42, max_total_evaluations=25
+        )
+        result = optimizer.optimize(
+            cost_fn=lambda params: params["length_mm"] ** 2 + params["width_mm"] ** 2,
+            param_bounds={"length_mm": (1.0, 5.0), "width_mm": (1.0, 5.0)},
+            max_iterations=5,
+        )
+        self.assertEqual(result.evaluations, 25)
+        self.assertFalse(result.converged)
+
     def test_staged_optimizer(self):
         runner = MockCSTRunner()
         goal = OptimizationGoalConfig()
@@ -114,20 +145,46 @@ class TestOptimizer(unittest.TestCase):
             ParameterBound("length_mm", 25.0, 35.0, 30.0),
             ParameterBound("width_mm", 15.0, 25.0, 20.0),
         ]
-        cfg = OptimizationPipelineConfig(
-            project_name="TestPipeline",
-            topology_name="pifa",
-            goal=goal,
-            bounds=bounds,
-            max_iterations=5,
-        )
-        pipeline = OptimizationPipeline(cfg, runner=MockCSTRunner())
-        res = pipeline.run()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = OptimizationPipelineConfig(
+                project_name="TestPipeline",
+                topology_name="pifa",
+                goal=goal,
+                bounds=bounds,
+                output_dir=Path(tmpdir),
+                max_iterations=5,
+            )
+            pipeline = OptimizationPipeline(cfg, runner=MockCSTRunner())
+            try:
+                res = pipeline.run()
+            finally:
+                pipeline.cache.close()
         self.assertEqual(res["status"], "completed")
         self.assertIn("best_parameters", res)
         # The configured budget is per stage. DE evaluates a population, so
         # candidate evaluations can exceed five while remaining bounded.
         self.assertLessEqual(res["optimization"]["total_evaluations"], 12 * cfg.max_iterations)
+
+    def test_pipeline_budget_without_scipy(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = OptimizationPipelineConfig(
+                project_name="NoSciPyBudget",
+                topology_name="pifa",
+                goal=OptimizationGoalConfig(),
+                bounds=[
+                    ParameterBound("length_mm", 25.0, 35.0, 30.0),
+                    ParameterBound("width_mm", 15.0, 25.0, 20.0),
+                ],
+                output_dir=Path(tmpdir),
+                max_iterations=5,
+            )
+            pipeline = OptimizationPipeline(cfg, runner=MockCSTRunner())
+            try:
+                with patch.dict(sys.modules, {"scipy": None, "scipy.optimize": None}):
+                    result = pipeline.run()
+            finally:
+                pipeline.cache.close()
+        self.assertLessEqual(result["optimization"]["total_evaluations"], 60)
 
 
 if __name__ == "__main__":

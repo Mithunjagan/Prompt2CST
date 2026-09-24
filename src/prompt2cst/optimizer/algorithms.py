@@ -15,6 +15,10 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 
+class _EvaluationBudgetReached(Exception):
+    """Stop SciPy exactly before an over-budget candidate evaluation."""
+
+
 @dataclass(frozen=True)
 class OptimizationResult:
     """Result of an optimization run."""
@@ -150,6 +154,7 @@ class DifferentialEvolutionOptimizer(Optimizer):
     mutation: float = 0.8
     crossover: float = 0.7
     seed: int | None = 42
+    max_total_evaluations: int | None = None
 
     def optimize(
         self,
@@ -180,15 +185,25 @@ class DifferentialEvolutionOptimizer(Optimizer):
         bounds_list = [param_bounds[n] for n in param_names]
         history: list[dict[str, Any]] = []
         eval_count = 0
+        best_cost = float("inf")
+        best_params: dict[str, float] = dict(initial_params or {})
 
         def wrapped_cost(x: list[float]) -> float:
-            nonlocal eval_count
+            nonlocal eval_count, best_cost, best_params
+            if (
+                self.max_total_evaluations is not None
+                and eval_count >= self.max_total_evaluations
+            ):
+                raise _EvaluationBudgetReached
             params = dict(zip(param_names, x))
             try:
                 cost = cost_fn(params)
             except Exception:
                 cost = 1e6
             eval_count += 1
+            if cost < best_cost:
+                best_cost = cost
+                best_params = dict(params)
             if eval_count % 10 == 0 or eval_count == 1:
                 history.append(
                     {"evaluation": eval_count, "params": params, "cost": cost}
@@ -208,6 +223,7 @@ class DifferentialEvolutionOptimizer(Optimizer):
                 tol=convergence_threshold,
                 seed=self.seed,
                 disp=False,
+                polish=False,
             )
             best_params = dict(zip(param_names, result.x))
             return OptimizationResult(
@@ -219,6 +235,18 @@ class DifferentialEvolutionOptimizer(Optimizer):
                 history=history,
             )
 
+        except _EvaluationBudgetReached:
+            population = max(5, self.population_size * len(param_names))
+            return OptimizationResult(
+                best_params=best_params,
+                best_cost=best_cost,
+                iterations=min(
+                    max_iterations, max(0, (eval_count - population) // population)
+                ),
+                evaluations=eval_count,
+                converged=False,
+                history=history,
+            )
         except ImportError:
             logger.warning(
                 "SciPy not available; falling back to random search"
@@ -242,7 +270,10 @@ class DifferentialEvolutionOptimizer(Optimizer):
         best_params: dict[str, float] = {}
         evaluations = 0
 
-        for i in range(max_iter * self.population_size):
+        budget = max_iter * self.population_size
+        if self.max_total_evaluations is not None:
+            budget = min(budget, self.max_total_evaluations)
+        for i in range(budget):
             params = {
                 name: rng.uniform(lo, hi)
                 for name, (lo, hi) in zip(param_names, bounds_list)

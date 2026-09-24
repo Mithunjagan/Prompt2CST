@@ -208,6 +208,7 @@ class StagedOptimizer:
             optimizer = DifferentialEvolutionOptimizer(
                 population_size=10,
                 seed=42,
+                max_total_evaluations=self.max_iterations_per_stage * 5,
             )
             max_iter = min(self.goal.max_iterations, self.max_iterations_per_stage)
 

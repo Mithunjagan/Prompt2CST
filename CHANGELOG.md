@@ -4,6 +4,11 @@ All notable Prompt2CST changes are documented here.
 
 ## Unreleased
 
+- Bounded staged differential-evolution candidate evaluations on both SciPy
+  and no-SciPy fallback paths. A fresh Windows CI run exposed the unbounded
+  fallback; the optimizer now stops at its configured per-stage budget, and
+  tests use isolated caches to catch that regression.
+
 - Added Linux/macOS Python app setup and launch scripts, plus a `doctor`
   command that checks local planning, native openEMS imports and Windows CST
   registration without claiming a solver run or licence check. The desktop
