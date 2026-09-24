@@ -13,6 +13,7 @@ import math
 import multiprocessing
 import os
 from pathlib import Path
+from queue import Empty
 import time
 from typing import Any
 
@@ -26,6 +27,7 @@ DEFAULT_OFFSETS_MM = (0.25, 0.375, 0.5, 0.625, 0.75, 1.0)
 TARGET_FREQUENCY_GHZ = 2.45
 FREQUENCY_TOLERANCE_GHZ = 0.010
 COM_TIMEOUT_SECONDS = 45.0
+RESULT_EXTRACTION_TIMEOUT_SECONDS = 120.0
 
 
 class CSTComOperationBlocked(RuntimeError):
@@ -104,15 +106,25 @@ class RealPifaImpedanceSweep:
 
     def _mark_blocked(self, state: dict[str, Any], diagnostic: dict[str, Any]) -> None:
         """Persist a non-green stop state before control returns to the caller."""
-        state["status"] = "blocked_cst_com"
+        save_crash_risk = (
+            diagnostic.get("operation") == "update_parameters"
+            and "Saving of" in str(diagnostic.get("error", ""))
+        )
+        state["status"] = "cst_restart_required" if save_crash_risk else "blocked_cst_com"
         state["blocker"] = diagnostic
         self._write_json("validation_matrix.json", {
-            "stage": "B_impedance", "status": "BLOCKED_CST_COM",
+            "stage": "B_impedance",
+            "status": "CST_RESTART_REQUIRED" if save_crash_risk else "BLOCKED_CST_COM",
             "stage_a_source": "PASS" if state.get("stage_a_reopen_validation") else "NOT_REVALIDATED",
             "radiator_length_frozen": "PASS (21.75 mm checkpoint lock)",
             "candidate_real_cst_solves": "NOT_RUN" if not state.get("history") else "INCOMPLETE",
             "frequency_constraint": "NOT_EVALUATED", "impedance_improved": "NOT_EVALUATED",
             "final_saveas_reopen": "NOT_RUN", "com_diagnosis": diagnostic,
+            "recovery_policy": (
+                "Do not resume this working project. Restart CST and create a fresh candidate copy from the validated Stage-A snapshot."
+                if save_crash_risk else
+                "Resume only after the CST COM server is responsive."
+            ),
         })
         self._checkpoint(state)
 
@@ -134,22 +146,33 @@ class RealPifaImpedanceSweep:
             return result
         trace_path = self.output_dir / "com_operation_trace.jsonl"
         context = multiprocessing.get_context("spawn")
-        queue = context.Queue()
+        result_queue = context.Queue()
         worker = context.Process(target=_bounded_com_worker,
-                                 args=(queue, str(self.output_dir), operation, str(project_path), kwargs, str(trace_path)))
+                                 args=(result_queue, str(self.output_dir), operation, str(project_path), kwargs, str(trace_path)))
         worker.start()
-        worker.join(timeout_seconds)
+        # Drain the result before joining.  A completed extraction can contain
+        # thousands of samples; joining first deadlocks when the Queue feeder
+        # fills its pipe while the parent waits for the child to exit.
+        try:
+            response = result_queue.get(timeout=timeout_seconds)
+        except Empty:
+            response = None
         diagnostic["elapsed_seconds"] = time.monotonic() - started
+        if response is None:
+            was_alive = worker.is_alive()
+            exitcode = worker.exitcode
+            if was_alive:
+                worker.terminate()
+                worker.join(5)
+                diagnostic.update({"classification": "COM_TIMEOUT", "helper_pid": worker.pid,
+                                   "com_call": "see last started event in com_operation_trace.jsonl"})
+            else:
+                diagnostic.update({"classification": "COM_HELPER_NO_RESULT", "helper_exitcode": exitcode})
+            raise CSTComOperationBlocked(diagnostic)
+        worker.join(5)
         if worker.is_alive():
             worker.terminate()
             worker.join(5)
-            diagnostic.update({"classification": "COM_TIMEOUT", "helper_pid": worker.pid,
-                               "com_call": "see last started event in com_operation_trace.jsonl"})
-            raise CSTComOperationBlocked(diagnostic)
-        if queue.empty():
-            diagnostic.update({"classification": "COM_HELPER_NO_RESULT", "helper_exitcode": worker.exitcode})
-            raise CSTComOperationBlocked(diagnostic)
-        response = queue.get()
         if response.get("status") != "completed":
             diagnostic.update({"classification": "COM_OPERATION_ERROR", "helper_exitcode": worker.exitcode,
                                "error": response.get("error"), "worker_elapsed_seconds": response.get("elapsed_seconds")})
@@ -205,7 +228,15 @@ class RealPifaImpedanceSweep:
             raise RuntimeError(f"CST solver did not complete: {solver}")
         if project_path.stat().st_mtime_ns < before_mtime:
             raise RuntimeError("CST project timestamp moved backwards after solver run")
-        extraction = self._com_call("extract_results", project_path, artifact_tag=tag)
+        # Opening CST's result tree and running the synchronous export macro can
+        # legitimately take longer than lightweight parameter readback.  Keep
+        # the operation bounded, but use the same budget as snapshot validation.
+        extraction = self._com_call(
+            "extract_results",
+            project_path,
+            artifact_tag=tag,
+            timeout_seconds=RESULT_EXTRACTION_TIMEOUT_SECONDS,
+        )
         result = self._result(extraction)
         raw = extraction.get("raw_extracted", {})
         required_artifacts = ("ascii_path", "touchstone_path", "raw_results_path")
@@ -265,6 +296,16 @@ class RealPifaImpedanceSweep:
             state = self._load_checkpoint()
             if state.get("status") == "completed":
                 return state
+            prior_blocker = state.get("blocker", {})
+            unsafe_saved_project = (
+                prior_blocker.get("operation") == "update_parameters"
+                and "Saving of" in str(prior_blocker.get("error", ""))
+            )
+            if state.get("status") == "cst_restart_required" or unsafe_saved_project:
+                raise RuntimeError(
+                    "CST_RESTART_REQUIRED: the prior working project failed during Save. "
+                    "It is quarantined and must not be resumed in place."
+                )
             try:
                 self._revalidate_stage_a_source(state)
             except CSTComOperationBlocked as exc:

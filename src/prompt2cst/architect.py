@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from .antenna_knowledge import family_evidence
+
 logger = logging.getLogger(__name__)
 
 # Speed of light (m/s)
@@ -30,6 +32,10 @@ class AntennaTopology(StrEnum):
     MEANDER = "meander"
     FRAME_INTEGRATED = "frame_integrated"
     TRANSPARENT = "transparent"
+    HELIX = "helix"
+    YAGI_UDA = "yagi_uda"
+    HORN = "horn"
+    VIVALDI = "vivaldi"
 
 
 @dataclass(frozen=True)
@@ -169,6 +175,26 @@ _TOPOLOGY_PROFILES: dict[AntennaTopology, dict[str, float]] = {
         "mfg_ease": 0.4,
         "min_freq_ghz": 0.8,
         "max_freq_ghz": 6.0,
+    },
+    AntennaTopology.HELIX: {
+        "bw_ratio": 0.35, "volume_factor": 0.9, "matching_ease": 0.55,
+        "efficiency_base": 0.8, "mfg_ease": 0.6,
+        "min_freq_ghz": 0.1, "max_freq_ghz": 30.0,
+    },
+    AntennaTopology.YAGI_UDA: {
+        "bw_ratio": 0.08, "volume_factor": 0.95, "matching_ease": 0.65,
+        "efficiency_base": 0.9, "mfg_ease": 0.7,
+        "min_freq_ghz": 0.03, "max_freq_ghz": 10.0,
+    },
+    AntennaTopology.HORN: {
+        "bw_ratio": 0.35, "volume_factor": 1.0, "matching_ease": 0.8,
+        "efficiency_base": 0.92, "mfg_ease": 0.55,
+        "min_freq_ghz": 1.0, "max_freq_ghz": 300.0,
+    },
+    AntennaTopology.VIVALDI: {
+        "bw_ratio": 0.8, "volume_factor": 0.85, "matching_ease": 0.65,
+        "efficiency_base": 0.75, "mfg_ease": 0.8,
+        "min_freq_ghz": 0.3, "max_freq_ghz": 110.0,
     },
 }
 
@@ -498,12 +524,17 @@ class RFArchitectureAgent:
         best = candidates[0]
         freq_center = (freq_min_ghz + freq_max_ghz) / 2
         sizing = self.compute_initial_sizing(best.topology, freq_center)
+        try:
+            evidence: dict[str, Any] | None = family_evidence(str(best.topology))
+        except KeyError:
+            evidence = None
 
         return {
             "candidates": [c.to_dict() for c in candidates],
             "selected": best.to_dict(),
             "initial_sizing": sizing.to_dict(),
             "frequency_range_ghz": [freq_min_ghz, freq_max_ghz],
+            "knowledge_evidence": evidence,
         }
 
     def evaluate_topologies(self, reqs: dict[str, Any]) -> dict[str, Any]:

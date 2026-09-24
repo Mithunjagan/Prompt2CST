@@ -1,0 +1,168 @@
+{
+  "schema_version": "1.0",
+  "disclaimer": "Every dimension is an initial engineering estimate. A design becomes build-ready only after mesh-converged full-wave simulation, tolerance analysis, feed and connector modelling, and prototype VNA and pattern verification.",
+  "sources": [
+    {"id":"nasa_sp7050","title":"Space Vehicle Antenna Design Handbook","organization":"NASA","url":"https://ntrs.nasa.gov/api/citations/19760010904/downloads/19760010904.pdf","kind":"government_report"},
+    {"id":"ntia_antenna_guide","title":"Antenna System Guide","organization":"NTIA and National Institute of Justice","url":"https://its.ntia.gov/umbraco/surface/download/publication?reportNumber=NIJ-202-00.pdf","kind":"government_report"},
+    {"id":"nist_yagi_tn688","title":"Yagi Antenna Design","organization":"National Bureau of Standards","url":"https://nvlpubs.nist.gov/nistpubs/Legacy/TN/nbstechnicalnote688.pdf","kind":"government_report"},
+    {"id":"openems_patch","title":"Simple Patch Antenna Tutorial","organization":"openEMS","url":"https://wiki.openems.de/index.php/Tutorial%3A_Simple_Patch_Antenna.html","kind":"official_documentation"},
+    {"id":"openems_helix","title":"Helical Antenna Tutorial","organization":"openEMS","url":"https://docs.openems.de/en/latest/python/openEMS/Tutorials/Helical_Antenna.html","kind":"official_documentation"},
+    {"id":"openems_horn","title":"Horn Antenna Tutorial","organization":"openEMS","url":"https://docs.openems.de/en/latest/octave/Tutorials/Horn_Antenna.html","kind":"official_documentation"},
+    {"id":"mdpi_patch_667","title":"Design and Analysis of a Microstrip Patch Antenna Array","organization":"Sensors","url":"https://www.mdpi.com/1424-8220/22/2/667","kind":"peer_reviewed_paper"},
+    {"id":"mdpi_pifa_2576","title":"A Compact PIFA for Wearable Applications","organization":"Electronics","url":"https://www.mdpi.com/2079-9292/10/21/2576","kind":"peer_reviewed_paper"},
+    {"id":"mdpi_vivaldi_5368","title":"Vivaldi Antenna Design for Biomedical Applications","organization":"Sensors","url":"https://www.mdpi.com/1424-8220/24/16/5368","kind":"peer_reviewed_paper"},
+    {"id":"nist_efficiency","title":"Reverberation Chamber Techniques for Determining Radiation and Total Efficiency","organization":"NIST","url":"https://www.nist.gov/publications/reverberation-chamber-techniques-determining-radiation-and-total-efficiency-antennas","kind":"peer_reviewed_paper"},
+    {"id":"openems_sar","title":"Specific Absorption Rate Documentation","organization":"openEMS","url":"https://docs.openems.de/en/latest/concepts/sar.html","kind":"official_documentation"}
+  ],
+  "families": [
+    {
+      "family":"dipole","display_name":"Centre-fed dipole","aliases":["half wave dipole","wire dipole"],"geometry_class":"wire",
+      "typical_use":["reference antenna","omnidirectional communications"],
+      "required_inputs":["center_frequency_hz","conductor_radius_mm","feed_impedance_ohm"],
+      "key_parameters":["total_length_mm","arm_length_mm","feed_gap_mm","conductor_radius_mm"],
+      "sizing_rules":[{"id":"dipole_half_wave","output":"total_length_mm","expression":"1000*c0/(2*f0_hz)","variables":{"c0":"speed of light in m/s","f0_hz":"center frequency in Hz"},"validity":["thin straight conductor in free space","shorten and retune for finite diameter and environment"],"source_ids":["ntia_antenna_guide","nasa_sp7050"],"confidence":"first_cut"}],
+      "simulation_requirements":["discrete or lumped centre feed","open or PML boundary","mesh convergence around feed gap","far-field monitor"],
+      "verification_metrics":["S11 and impedance across band","radiation efficiency","realized gain and pattern","feed-current symmetry"],
+      "limitations":["nearby supports, cables and enclosures detune the antenna","a balun or choke may be required to suppress common-mode feed current"],
+      "implementation_status":"cst_compiler_available","source_ids":["ntia_antenna_guide","nasa_sp7050","nist_efficiency"]
+    },
+    {
+      "family":"monopole","display_name":"Quarter-wave monopole","aliases":["quarter wave monopole","whip"],"geometry_class":"wire",
+      "typical_use":["compact omnidirectional communications","vehicle and ground-plane mounting"],
+      "required_inputs":["center_frequency_hz","ground_plane_dimensions_mm","conductor_radius_mm"],
+      "key_parameters":["height_mm","ground_radius_mm","conductor_radius_mm","feed_gap_mm"],
+      "sizing_rules":[{"id":"monopole_quarter_wave","output":"height_mm","expression":"1000*c0/(4*f0_hz)","variables":{"c0":"speed of light in m/s","f0_hz":"center frequency in Hz"},"validity":["electrically large conductive ground reference","final length requires full assembly tuning"],"source_ids":["ntia_antenna_guide","nasa_sp7050"],"confidence":"first_cut"}],
+      "simulation_requirements":["model finite ground and connector","open or PML boundary","mesh convergence at feed","far-field monitor"],
+      "verification_metrics":["S11 and impedance","total and radiation efficiency","azimuth pattern","peak realized gain"],
+      "limitations":["finite ground size strongly changes impedance and pattern","feed cable must be included or de-embedded"],
+      "implementation_status":"cst_compiler_available","source_ids":["ntia_antenna_guide","nasa_sp7050","nist_efficiency"]
+    },
+    {
+      "family":"patch","display_name":"Rectangular microstrip patch","aliases":["microstrip patch","rectangular patch"],"geometry_class":"planar",
+      "typical_use":["low-profile directional antenna","PCB antenna","arrays"],
+      "required_inputs":["center_frequency_hz","substrate_relative_permittivity","substrate_height_mm","loss_tangent","copper_thickness_mm"],
+      "key_parameters":["patch_width_mm","patch_length_mm","feed_position_mm","ground_dimensions_mm","substrate_height_mm"],
+      "sizing_rules":[
+        {"id":"patch_width","output":"patch_width_m","expression":"c0/(2*f0_hz)*sqrt(2/(er+1))","variables":{"c0":"speed of light in m/s","f0_hz":"center frequency in Hz","er":"substrate relative permittivity"},"validity":["rectangular fundamental-mode patch","homogeneous substrate"],"source_ids":["mdpi_patch_667"],"confidence":"reference"},
+        {"id":"patch_length","output":"patch_length_m","expression":"c0/(2*f0_hz*sqrt(er_eff))-2*delta_L","variables":{"er_eff":"effective relative permittivity","delta_L":"fringing length extension in m"},"validity":["use with cited effective-permittivity and fringing equations","feed location must be separately matched"],"source_ids":["mdpi_patch_667","openems_patch"],"confidence":"reference"}
+      ],
+      "simulation_requirements":["frequency-dependent dielectric and conductor loss","finite substrate and ground","physical feed and connector model","local mesh refinement at feed and edges","open or PML boundary and far field"],
+      "verification_metrics":["S11 bandwidth","input impedance","radiation and total efficiency","realized gain","cross-polarization","front-to-back ratio"],
+      "limitations":["closed-form equations only initialize the fundamental rectangular patch","FR-4 properties vary by lot and frequency","surface waves and connector parasitics may dominate"],
+      "implementation_status":"cst_compiler_available","source_ids":["mdpi_patch_667","openems_patch","nist_efficiency"]
+    },
+    {
+      "family":"pifa","display_name":"Planar inverted-F antenna","aliases":["planar inverted f","pifa antenna"],"geometry_class":"planar",
+      "typical_use":["wearables","handsets","compact embedded devices"],
+      "required_inputs":["center_frequency_hz","available_volume_mm","ground_plane_dimensions_mm","enclosure_materials","user_loading"],
+      "key_parameters":["radiator_length_mm","radiator_width_mm","height_mm","short_width_mm","feed_to_short_spacing_mm","ground_dimensions_mm"],
+      "sizing_rules":[{"id":"pifa_path_length","output":"effective_path_length_mm","expression":"1000*c0/(4*f0_hz*sqrt(er_effective))","variables":{"c0":"speed of light in m/s","f0_hz":"center frequency in Hz","er_effective":"effective permittivity of actual structure"},"validity":["quarter-wave starting estimate only","short, feed, ground, housing and body loading must be jointly optimized"],"source_ids":["mdpi_pifa_2576"],"confidence":"empirical_start"}],
+      "simulation_requirements":["finite ground and shorting element","complete feed and enclosure","lossy dispersive body phantom when wearable","mesh refinement at feed and short","open or PML boundary"],
+      "verification_metrics":["free-space and loaded S11","total efficiency","realized gain and pattern","SAR for wearable exposure studies","detuning under assembly tolerances"],
+      "limitations":["simple path-length formulas are especially sensitive to ground and loading","openEMS SAR output alone is not compliance certification"],
+      "implementation_status":"openems_generator_available","source_ids":["mdpi_pifa_2576","openems_sar","nist_efficiency"]
+    },
+    {
+      "family":"loop","display_name":"Loop antenna","aliases":["small loop","resonant loop"],"geometry_class":"wire",
+      "typical_use":["magnetic-field coupling","direction finding","compact receiving antennas"],
+      "required_inputs":["center_frequency_hz","loop_shape","conductor_size_mm","number_of_turns","target_regime"],
+      "key_parameters":["perimeter_mm","area_mm2","turns","conductor_radius_mm","tuning_capacitance_pf"],
+      "sizing_rules":[{"id":"resonant_loop_perimeter","output":"perimeter_mm","expression":"1000*c0/f0_hz","variables":{"c0":"speed of light in m/s","f0_hz":"center frequency in Hz"},"validity":["one-wavelength resonant loop","not valid for electrically small tuned loops"],"source_ids":["nasa_sp7050"],"confidence":"first_cut"}],
+      "simulation_requirements":["resolve conductor loss or use surface impedance","model tuning capacitor ESR and ESL when present","feed and balun model","open or PML boundary"],
+      "verification_metrics":["S11 and Q","radiation efficiency","pattern nulls","component voltage and current stress"],
+      "limitations":["small-loop efficiency and bandwidth can be very low","lumped tuning parasitics can dominate"],
+      "implementation_status":"research_only","source_ids":["nasa_sp7050","nist_efficiency"]
+    },
+    {
+      "family":"slot","display_name":"Resonant slot antenna","aliases":["half wave slot","aperture slot"],"geometry_class":"aperture",
+      "typical_use":["flush mounting","planar arrays","waveguide apertures"],
+      "required_inputs":["center_frequency_hz","host_conductor_dimensions_mm","substrate_or_cavity_materials","feed_type"],
+      "key_parameters":["slot_length_mm","slot_width_mm","feed_offset_mm","ground_dimensions_mm","cavity_dimensions_mm"],
+      "sizing_rules":[{"id":"slot_half_wave","output":"slot_length_mm","expression":"1000*c0/(2*f0_hz*sqrt(er_effective))","variables":{"c0":"speed of light in m/s","f0_hz":"center frequency in Hz","er_effective":"effective permittivity near slot"},"validity":["thin resonant slot first cut","finite ground, cavity and feed require simulation"],"source_ids":["nasa_sp7050"],"confidence":"first_cut"}],
+      "simulation_requirements":["finite conductor or cavity","actual coupling feed","edge mesh refinement","open or PML boundary and far field"],
+      "verification_metrics":["S11 bandwidth","efficiency","co- and cross-polar patterns","front-to-back ratio"],
+      "limitations":["feed and backing volume strongly affect resonance and polarization"],
+      "implementation_status":"research_only","source_ids":["nasa_sp7050","nist_efficiency"]
+    },
+    {
+      "family":"helix","display_name":"Axial-mode helical antenna","aliases":["helical","axial mode helix"],"geometry_class":"wire",
+      "typical_use":["circular polarization","satellite and directional links"],
+      "required_inputs":["center_frequency_hz","number_of_turns","desired_polarization","conductor_radius_mm"],
+      "key_parameters":["helix_radius_mm","pitch_mm","turns","ground_radius_mm","feed_impedance_ohm"],
+      "sizing_rules":[
+        {"id":"helix_diameter","output":"diameter_mm","expression":"1000*c0/(pi*f0_hz)","variables":{"c0":"speed of light in m/s","f0_hz":"center frequency in Hz"},"validity":["axial-mode starting geometry","circumference approximately one wavelength"],"source_ids":["openems_helix"],"confidence":"first_cut"},
+        {"id":"helix_pitch","output":"pitch_mm","expression":"1000*c0/(4*f0_hz)","variables":{"c0":"speed of light in m/s","f0_hz":"center frequency in Hz"},"validity":["axial-mode starting geometry","optimize pitch and turns for gain and axial ratio"],"source_ids":["openems_helix"],"confidence":"first_cut"}
+      ],
+      "simulation_requirements":["curved-wire mesh convergence","finite ground","physical feed and matching","open or PML boundary","far-field circular-polarization decomposition"],
+      "verification_metrics":["S11","realized gain","axial ratio bandwidth","beamwidth","front-to-back ratio"],
+      "limitations":["feed impedance is not automatically 50 ohms","finite ground and turn count alter pattern and match"],
+      "implementation_status":"openems_generator_available","source_ids":["openems_helix","nasa_sp7050"]
+    },
+    {
+      "family":"horn","display_name":"Pyramidal horn antenna","aliases":["pyramidal horn","waveguide horn"],"geometry_class":"aperture",
+      "typical_use":["high-gain microwave links","measurement reference","feeds for reflectors"],
+      "required_inputs":["center_frequency_hz","waveguide_band","target_gain_dbi","polarization"],
+      "key_parameters":["throat_width_mm","throat_height_mm","aperture_width_mm","aperture_height_mm","flare_length_mm"],
+      "sizing_rules":[{"id":"horn_aperture_gain","output":"aperture_area_m2","expression":"gain_linear*lambda0_m^2/(4*pi*aperture_efficiency)","variables":{"gain_linear":"target power gain","lambda0_m":"free-space wavelength in m","aperture_efficiency":"assumed efficiency requiring validation"},"validity":["aperture-theory first cut","waveguide mode and phase error constraints must also pass"],"source_ids":["openems_horn","nasa_sp7050"],"confidence":"first_cut"}],
+      "simulation_requirements":["single-mode waveguide port","correct wall conductivity","mesh convergence at throat and aperture","open or PML boundary","near-field to far-field box"],
+      "verification_metrics":["port S11","gain and directivity","aperture efficiency","beamwidth","sidelobes and cross-polarization"],
+      "limitations":["aperture area alone does not determine a valid horn","waveguide cutoff and higher modes constrain the usable band"],
+      "implementation_status":"openems_generator_available","source_ids":["openems_horn","nasa_sp7050"]
+    },
+    {
+      "family":"yagi_uda","display_name":"Yagi-Uda array","aliases":["yagi","yagi uda"],"geometry_class":"array",
+      "typical_use":["directional VHF and UHF links","television reception","telemetry"],
+      "required_inputs":["center_frequency_hz","target_gain_dbi","boom_length_limit_mm","element_diameter_mm"],
+      "key_parameters":["driven_length_mm","reflector_length_mm","director_lengths_mm","element_spacings_mm","boom_diameter_mm"],
+      "sizing_rules":[{"id":"yagi_nist_design_curves","output":"normalized_element_lengths_and_spacings","expression":"lookup NBS TN 688 curves using boom_length/lambda and element_diameter/lambda","variables":{"boom_length/lambda":"normalized boom length","element_diameter/lambda":"normalized parasitic element diameter"},"validity":["use report design curves, not one universal coefficient","then optimize and tolerance-test complete array"],"source_ids":["nist_yagi_tn688"],"confidence":"reference"}],
+      "simulation_requirements":["all elements and boom","balanced driven-element feed","conductor junctions","open or PML boundary","far-field sweep"],
+      "verification_metrics":["S11","forward gain","front-to-back ratio","beamwidth","sidelobes","element tolerance sensitivity"],
+      "limitations":["element lengths and spacings are coupled","boom and mounting corrections are required"],
+      "implementation_status":"openems_generator_available","source_ids":["nist_yagi_tn688","nasa_sp7050"]
+    },
+    {
+      "family":"vivaldi","display_name":"Tapered-slot Vivaldi antenna","aliases":["tapered slot","tsa","vivaldi antenna"],"geometry_class":"aperture",
+      "typical_use":["ultra-wideband sensing","imaging","wideband end-fire links"],
+      "required_inputs":["lowest_frequency_hz","highest_frequency_hz","substrate_relative_permittivity","substrate_thickness_mm","feed_transition"],
+      "key_parameters":["aperture_width_mm","taper_length_mm","opening_rate","slotline_gap_mm","feed_transition_dimensions_mm"],
+      "sizing_rules":[{"id":"vivaldi_low_frequency_aperture","output":"aperture_scale_m","expression":"c0/f_low_hz*sqrt(2/(er_medium+er_substrate))","variables":{"c0":"speed of light in m/s","f_low_hz":"lowest frequency in Hz","er_medium":"relative permittivity outside antenna","er_substrate":"substrate relative permittivity"},"validity":["low-frequency aperture starting scale from cited design","taper and transition require full-wave optimization"],"source_ids":["mdpi_vivaldi_5368"],"confidence":"empirical_start"}],
+      "simulation_requirements":["broadband port and feed transition","frequency-dependent substrate loss","edge and slot mesh refinement","open or PML boundary","broadband far fields"],
+      "verification_metrics":["S11 across full band","group delay","realized gain versus frequency","pattern stability","pulse fidelity where applicable"],
+      "limitations":["low-frequency performance is aperture-size limited","feed transition can set actual bandwidth"],
+      "implementation_status":"openems_generator_available","source_ids":["mdpi_vivaldi_5368","nasa_sp7050"]
+    },
+    {
+      "family":"log_periodic","display_name":"Log-periodic dipole array","aliases":["lpda","log periodic"],"geometry_class":"array",
+      "typical_use":["wideband directional communications","EMC measurement"],
+      "required_inputs":["lowest_frequency_hz","highest_frequency_hz","target_gain_dbi","feed_impedance_ohm"],
+      "key_parameters":["scale_factor_tau","spacing_factor_sigma","element_lengths_mm","element_spacings_mm","boom_impedance_ohm"],
+      "sizing_rules":[{"id":"lpda_geometric_scaling","output":"successive_dimensions","expression":"L[n+1]=tau*L[n] and R[n+1]=tau*R[n]","variables":{"tau":"geometric scale factor between zero and one","L":"element half-length","R":"element location from virtual apex"},"validity":["frequency-independent log-periodic geometry","tau and spacing factor must be selected for gain and bandwidth"],"source_ids":["nasa_sp7050"],"confidence":"reference"}],
+      "simulation_requirements":["crossed-boom transmission line and feed","all active-region elements","open or PML boundary","multi-frequency far fields"],
+      "verification_metrics":["S11 across band","gain ripple","front-to-back ratio","pattern and phase-centre movement"],
+      "limitations":["a wavelength rule alone is insufficient","boom impedance and element connection details are critical"],
+      "implementation_status":"research_only","source_ids":["nasa_sp7050"]
+    },
+    {
+      "family":"spiral","display_name":"Equiangular spiral antenna","aliases":["archimedean spiral","equiangular spiral","spiral antenna"],"geometry_class":"planar",
+      "typical_use":["wideband circular polarization","direction finding","sensing"],
+      "required_inputs":["lowest_frequency_hz","highest_frequency_hz","arm_count","substrate_and_backing","desired_sense"],
+      "key_parameters":["outer_radius_mm","inner_radius_mm","growth_rate","arm_width_mm","arm_spacing_mm","absorber_or_cavity_mm"],
+      "sizing_rules":[{"id":"spiral_outer_circumference","output":"outer_radius_mm","expression":"1000*c0/(2*pi*f_low_hz)","variables":{"c0":"speed of light in m/s","f_low_hz":"lowest frequency in Hz"},"validity":["active-region first cut with outer circumference near longest wavelength","backing and truncation require simulation"],"source_ids":["nasa_sp7050"],"confidence":"first_cut"}],
+      "simulation_requirements":["balanced broadband feed","finite arms and truncation","backing cavity or absorber","open or PML boundary","circular-polarization far fields"],
+      "verification_metrics":["S11","axial ratio","gain versus frequency","pattern symmetry","back radiation"],
+      "limitations":["finite truncation sets the low-frequency limit","balun and backing determine practical performance"],
+      "implementation_status":"research_only","source_ids":["nasa_sp7050"]
+    },
+    {
+      "family":"parabolic_reflector","display_name":"Parabolic reflector antenna","aliases":["dish","parabolic dish","reflector"],"geometry_class":"reflector",
+      "typical_use":["high-gain point-to-point links","satellite ground stations","radio astronomy"],
+      "required_inputs":["center_frequency_hz","target_gain_dbi","feed_pattern","packaging_limits"],
+      "key_parameters":["diameter_mm","focal_length_mm","f_over_d","surface_rms_mm","feed_position_mm"],
+      "sizing_rules":[{"id":"reflector_gain","output":"diameter_m","expression":"lambda0_m/pi*sqrt(gain_linear/aperture_efficiency)","variables":{"lambda0_m":"free-space wavelength in m","gain_linear":"target power gain","aperture_efficiency":"feed and reflector efficiency requiring validation"},"validity":["far-field parabolic reflector estimate","feed illumination, blockage and surface accuracy must be evaluated"],"source_ids":["nasa_sp7050"],"confidence":"first_cut"}],
+      "simulation_requirements":["measured or simulated feed pattern","reflector surface and supports","hybrid or high-frequency solver for electrically large structures","far-field monitor"],
+      "verification_metrics":["realized gain","aperture efficiency","beamwidth","sidelobes","cross-polarization","pointing sensitivity"],
+      "limitations":["feed illumination and blockage dominate efficiency","surface tolerance becomes critical as wavelength shrinks"],
+      "implementation_status":"research_only","source_ids":["nasa_sp7050"]
+    }
+  ]
+}

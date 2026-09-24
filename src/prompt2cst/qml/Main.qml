@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtQuick.Window
 
@@ -32,6 +33,7 @@ ApplicationWindow {
     property string approvalPreview: ""
     property string infoTitle: ""
     property string infoText: ""
+    property string datasetUrl: ""
 
     onClosing: root.backend.cancelPendingApproval()
 
@@ -476,7 +478,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         spacing: 7
                         Text {
-                            text: "OPENROUTER KEY"
+                            text: "OPENROUTER KEY · OPTIONAL FOR LOCAL"
                             color: root.muted
                             font.pixelSize: 10
                             font.letterSpacing: 1.4
@@ -581,7 +583,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         spacing: 7
                         Text {
-                            text: "STRUCTURED / TOOL MODEL"
+                            text: "CLOUD MODEL · OPTIONAL FOR LOCAL"
                             color: root.muted
                             font.pixelSize: 10
                             font.letterSpacing: 1.4
@@ -763,6 +765,42 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                         }
 
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            TextField {
+                                Layout.fillWidth: true
+                                implicitHeight: root.compactHeight ? 40 : 44
+                                readOnly: true
+                                text: root.datasetUrl
+                                placeholderText: "Optional faculty S11 dataset ZIP"
+                                color: root.ink
+                                placeholderTextColor: "#60758C"
+                                leftPadding: 12
+                                font.pixelSize: 11
+                                background: Rectangle {
+                                    radius: 14
+                                    color: Qt.rgba(0.025, 0.055, 0.09, 0.82)
+                                    border.width: 1
+                                    border.color: Qt.rgba(0.55, 0.74, 0.93, 0.18)
+                                }
+                            }
+                            LiquidButton {
+                                implicitWidth: 82
+                                implicitHeight: root.compactHeight ? 40 : 44
+                                text: "Dataset"
+                                enabled: !root.backend.busy
+                                onClicked: datasetDialog.open()
+                            }
+                            LiquidButton {
+                                implicitWidth: 58
+                                implicitHeight: root.compactHeight ? 40 : 44
+                                text: "Clear"
+                                enabled: !root.backend.busy && root.datasetUrl.length > 0
+                                onClicked: root.datasetUrl = ""
+                            }
+                        }
+
                         Text {
                             text: "EXECUTION PHASE"
                             color: root.muted
@@ -893,7 +931,7 @@ ApplicationWindow {
                                 }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "Preview is read-only. Every CST write requires approval."
+                                    text: "Local Autopilot needs no API key. Every CST write still requires approval."
                                     color: "#A8C9CA"
                                     font.pixelSize: 10
                                     wrapMode: Text.WordWrap
@@ -935,6 +973,61 @@ ApplicationWindow {
                                                           familyCombo.currentValue, promptArea.text,
                                                           "build", "build");
                                 }
+                            }
+                        }
+                        CheckBox {
+                            id: localAiToggle
+                            objectName: "localAiToggle"
+                            text: "Confirm named family with local Ollama (experimental)"
+                            checked: false
+                            enabled: !root.backend.busy
+                            palette.windowText: root.muted
+                            font.pixelSize: 11
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Advisory only. Frequency, topology support, geometry and RF results remain deterministic."
+                        }
+                        LiquidButton {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: root.compactHeight ? 46 : 52
+                            text: "Autonomous Local · No API key"
+                            iconText: "✦"
+                            variant: "primary"
+                            enabled: !root.backend.busy
+                            onClicked: {
+                                root.activeReviewTab = 0;
+                                if (localAiToggle.checked) {
+                                    root.backend.runLocalAutonomousAI(promptArea.text,
+                                                                      root.datasetUrl);
+                                } else {
+                                    root.backend.runLocalAutonomous(promptArea.text,
+                                                                    root.datasetUrl);
+                                }
+                            }
+                        }
+                        LiquidButton {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: root.compactHeight ? 46 : 52
+                            text: "Generate openEMS · Free local solver"
+                            iconText: "⌁"
+                            variant: "build"
+                            enabled: !root.backend.busy
+                            onClicked: {
+                                root.activeReviewTab = 0;
+                                root.backend.runLocalOpenEMS(promptArea.text,
+                                                            root.datasetUrl);
+                            }
+                        }
+                        LiquidButton {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: root.compactHeight ? 46 : 52
+                            text: "Design + simulate · openEMS"
+                            iconText: "⌁"
+                            variant: "primary"
+                            enabled: !root.backend.busy
+                            onClicked: {
+                                root.activeReviewTab = 0;
+                                root.backend.runLocalOpenEMSSimulate(promptArea.text,
+                                                                     root.datasetUrl);
                             }
                         }
                     }
@@ -1155,6 +1248,14 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    FileDialog {
+        id: datasetDialog
+        title: "Select parameterized S11 dataset"
+        nameFilters: ["ZIP archives (*.zip)"]
+        fileMode: FileDialog.OpenFile
+        onAccepted: root.datasetUrl = selectedFile.toString()
     }
 
     Dialog {

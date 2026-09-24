@@ -18,8 +18,7 @@
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.5.0b1-6c63ff" alt="Version 0.5.0 beta 1"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.11-3776ab?logo=python&amp;logoColor=white" alt="Python 3.11"></a>
   <a href="#platform-support"><img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?logo=windows" alt="Windows 10 and 11"></a>
-  <a href="#verification"><img src="https://img.shields.io/badge/tests-63%20passing-22c55e" alt="63 tests passing"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-16a34a" alt="MIT license"></a>
+  <a href="#verification"><img src="https://img.shields.io/badge/tests-196%20passing-22c55e" alt="196 tests passing"></a>
 </p>
 
 <p align="center">
@@ -52,7 +51,7 @@ It turns natural-language intent and paper evidence into typed, reviewable CST S
   <strong>25 typed tools</strong> ·
   <strong>6 protected write tools</strong> ·
   <strong>10 antenna topologies</strong> ·
-  <strong>102 unit tests</strong> ·
+  <strong>196 unit tests</strong> ·
   <strong>$0 API cost verified</strong>
 </p>
 
@@ -126,6 +125,7 @@ flowchart LR
 ## Contents
 
 - [What the application can do](#what-the-application-can-do)
+- [Autonomous antenna milestone](#autonomous-antenna-milestone)
 - [Why Prompt2CST feels different](#why-prompt2cst-feels-different)
 - [What it cannot do](#what-it-cannot-do)
 - [Platform support](#platform-support)
@@ -150,7 +150,25 @@ flowchart LR
 - [Troubleshooting](#troubleshooting)
 - [Repository file reference](#repository-file-reference)
 - [Development](#development)
-- [Security, limitations, and license](#security-limitations-and-license)
+- [Security and limitations](#security-and-limitations)
+
+## Autonomous antenna milestone
+
+The concrete full-stop target is a **standalone local 868/915 MHz PIFA** flow:
+one prompt starts a bounded openEMS search, automatically retunes after any
+failed numerical check, compares mesh and simulation-domain sizes, verifies
+far-field results, and saves a fabrication-oriented package with a truthful
+pass/fail report. Codex, a hosted LLM, paid APIs, and CST must not be required
+to run it. A hardware-performance claim additionally needs a measured
+prototype.
+
+This is a delivery target, **not a claim that it is already complete**. The
+current openEMS path generates five families and can run real FDTD simulations;
+the 868 MHz PIFA pilot still needed manual retuning, has no domain-size or
+far-field convergence result, and has not been fabricated. See the
+[dedicated goals and stop gates](docs/autonomous-antenna-goals.md) and the
+[pilot evidence](docs/openems-pifa-868-pilot.md). Families beyond PIFA are
+added only when each one passes the same validation standard.
 
 ## What the application can do
 
@@ -402,6 +420,82 @@ input/output; it is not a normal interactive command prompt.
 ```
 
 ## Using the desktop application
+
+### Zero-key Autonomous Local mode
+
+The desktop application can create a traceable antenna planning project
+without Codex, ChatGPT, OpenRouter, or another hosted model:
+
+1. Enter the antenna request in **Requirements**.
+2. Optionally choose a parameterized S11 ZIP with **Dataset**.
+3. Select **Autonomous Local · No API key**.
+4. Review the selected topology, target band, dataset suitability, execution
+   readiness, validation boundary, and saved project path under **Assistant**.
+5. Inspect every immutable artifact path under **Activity**.
+
+This mode deliberately produces a deterministic engineering plan. It never
+labels closed-form or dataset predictions as EM simulation. Solver execution
+remains a separate validated stage, and CST writes remain approval-gated.
+
+### Cited antenna knowledge catalogue
+
+The local application now ships a strict, machine-readable research catalogue
+for dipole, monopole, rectangular patch, PIFA, loop, slot, axial-mode helix,
+pyramidal horn, Yagi-Uda, Vivaldi, log-periodic, spiral, and parabolic-reflector
+families. Each record includes required design inputs, key geometry variables,
+first-cut equations with validity limits, simulation requirements, verification
+metrics, limitations, implementation status, and source URLs. Query it without
+an API key using \`python -m prompt2cst antenna-knowledge\`, optionally followed
+by \`--family vivaldi\`.
+
+The catalogue distinguishes \`cst_compiler_available\`,
+\`openems_generator_available\`, and \`research_only\`. Literature equations
+provide initialization, not simulated, measured, fabrication-ready, or
+certified performance.
+
+PIFA, axial-mode helix, five-element Yagi-Uda, pyramidal horn, and exponential
+Vivaldi generators can emit canonical JSON plus executable Python for the free
+openEMS solver:
+
+\`python -m prompt2cst openems-generate helix --freq 2.45 --output-dir project\`
+
+After inspecting the generated plan, execute it locally with:
+
+\`python -m prompt2cst openems-run project\`
+
+Execution revalidates the plan, rejects a modified generated script, enforces a
+timeout, and requires at least 2 GB free for a port-only run. Far-field recording
+is opt-in with \`--far-field\` during generation and requires at least 8 GB free.
+A completed far-field run extracts directivity, radiation efficiency, and
+realized gain from openEMS NF2FF output; these values are not available from
+the faster port-only runs.
+
+The same path is available through \`design ... --mode openems\` and the
+desktop **Generate openEMS · Free local solver** action. Generation never
+pretends a simulation ran. Real S11 and impedance require compatible openEMS
+and CSXCAD Python bindings on the machine and a successfully completed FDTD run.
+
+To generate and run from a prompt in one command, use
+`python -m prompt2cst design "Design a 2.45 GHz PIFA with S11 < -10 dB" --mode openems-simulate --project-dir D:\antenna-project`.
+The desktop **Design + simulate · openEMS** action does the same in a background
+worker. For PIFA, a missed target triggers a bounded length/feed search with
+real solver runs. If a matching candidate leaves run budget, the app compares
+successively finer meshes until the result converges or the mesh/budget limit
+is reached. Its report separately marks the S11 target and mesh convergence;
+an unmet convergence test is never presented as a verified design. If a finer
+mesh times out, the last completed result is retained and its mesh status is
+marked inconclusive.
+Set `PROMPT2CST_OUTPUT_DIR` before launching the desktop app to place its
+projects and solver files on a drive with enough free space.
+
+For a bounded PIFA length/feed search, use
+`python -m prompt2cst openems-search-pifa --freq 2.45 --output-dir D:\pifa-search`.
+The search writes each actual solver result separately, resumes completed
+candidates, and stops when the center-frequency S11 target is met. It can only
+optimize the current PIFA geometry variables and does not certify an antenna.
+Use `python -m prompt2cst openems-verify-mesh D:\pifa-search\candidate_NAME`
+to rerun the selected candidate with a finer mesh and compare S11 and impedance.
+Gain, efficiency, patterns, and physical fabrication still require verification.
 
 ### Interface areas
 
@@ -1049,13 +1143,93 @@ strongest built-in approval flow.
 
 # Inspect persisted tasks, artifacts, conflicts, and checkpoint without running CST
 .\.venv\Scripts\python.exe -m prompt2cst.cli status project
+
+# Normalize a faculty/laboratory S11 sweep ZIP, rank it at 2.45 GHz, and
+# calculate one-factor parameter sensitivity without calling a remote model
+.\.venv\Scripts\python.exe -m prompt2cst ingest-dataset faculty.zip `
+  --target-freq 2.45 --output-dir outputs\faculty_dataset_study
+
+# Attach that dataset as provenance-tracked evidence to an autonomous project
+.\.venv\Scripts\python.exe -m prompt2cst design `
+  "Design a practical 2.45 GHz smart-glasses antenna" `
+  --dataset faculty.zip --mode dry-run --project-dir project
 ```
+
+Dataset ZIPs are read without extracting files. Entry paths, sizes, numeric
+rows, monotonic frequency axes, and hashes are validated. Opaque parameter
+names remain blocked from manufacturing use until a geometry/units mapping is
+provided. A dataset that has good resonances elsewhere but fails the requested
+frequency is retained as sensitivity evidence and explicitly rejected as an
+optimizer seed.
+
+The preliminary audit of the faculty's shared Drive sweeps is in
+[`docs/faculty-dataset-audit.md`](docs/faculty-dataset-audit.md). Those files
+remain reference evidence until their topology and parameter meanings are
+verified.
+
+### Local language-model pilot (optional)
+
+Ollama can run a small model on the same computer without an OpenRouter key.
+The separate `scripts/train_local_antenna_parser.py` experiment fine-tunes a
+Qwen3-0.6B LoRA adapter to extract only *explicit* topology, frequency, and S11
+requirements into JSON. It does not generate geometry, calculate RF performance,
+or replace the validated `DesignIR`/solver path. The app does not automatically
+trust or execute its output. Unknown requirements remain `null`.
+
+The desktop **Autonomous Local** action now has an opt-in **Confirm named family
+with local Ollama** checkbox. The equivalent CLI switch is `design --local-ai`.
+This uses the installed *base* model for a family-name check only. A hint is
+accepted only when it matches a curated, explicitly named family in the
+original prompt. Frequency conversion, S11, topology capability, sizing,
+solver work, and CST approval remain deterministic. Invalid model output,
+timeouts, or a missing model leave the deterministic plan unchanged. Known
+research-only requests such as a spiral antenna stop before project creation.
+No model is downloaded automatically.
+
+The endpoint is restricted to `http://127.0.0.1:<port>` and defaults to
+`http://127.0.0.1:11434`. Set `PROMPT2CST_OLLAMA_EXE` to the local `ollama.exe`
+path if the desktop app should start the server when needed; set
+`OLLAMA_MODELS` to the desired local model directory. The model defaults to
+`qwen3:0.6b` and runs on CPU for this audited laptop. Example:
+
+```powershell
+.\.venv\Scripts\python.exe -m prompt2cst.cli design `
+  "Design a PIFA at 868 MHz" --mode dry-run --local-ai `
+  --project-dir project
+```
+
+The pilot uses auditable synthetic instruction examples from
+`src/prompt2cst/local_ai_dataset.py`, with separate held-out templates and
+frequencies. It never uses raw faculty S11 sweeps as language-model answers.
+Run training in a separate CUDA-enabled Python 3.11 environment with PyTorch,
+Transformers, PEFT, and Accelerate installed, then run:
+
+```powershell
+python scripts\train_local_antenna_parser.py `
+  --output-root D:\Prompt2CST-LocalAI\pilot --steps 60
+```
+
+The script saves the baseline and tuned held-out scores to `evaluation.json`
+and always saves the LoRA adapter. It exports a merged Safetensors model for
+optional Ollama import **only if** held-out exact-match accuracy strictly
+improves over the baseline and reaches at least 80%. This small template test
+is a pilot gate, not a claim that the model understands arbitrary antenna
+requests or can design a practical antenna. Solver validation and human
+review still apply.
+
+The [2026-09-24 local pilot report](docs/local-ai-pilot.md) records the actual
+installation, evaluation, and non-deployment decision. Its first LoRA adapter
+reached only 11/33 exact matches on the held-out synthetic prompts, so it is
+not used by the app.
 
 `--mode cst` requires both a parameterized CST project and the installed CST
 2026 COM interface. It refuses to substitute mock values if CST output is
 missing. The project workspace keeps immutable versioned artifacts under
 `requirements`, `research`, `architecture`, `design`, `simulations`,
 `optimization`, and `final`.
+
+A CST project that reports a native `Save` failure is quarantined with
+`CST_RESTART_REQUIRED`; the optimizer will not resume that same working file.
 
 ### Current repository audit
 
@@ -1256,7 +1430,6 @@ projects.
 | `SECURITY.md` | API-key handling, CST write boundary, and vulnerability reporting |
 | `CONTRIBUTING.md` | Development workflow and rules for new antenna families |
 | `CHANGELOG.md` | Version history |
-| `LICENSE` | MIT license |
 | `.gitignore` | Excludes environments, build artifacts, secrets, outputs, CST projects, and editor state |
 | `.env.example` | Secret-safe provider, role, timeout, sweep, mesh, state and CST environment template |
 | `AGENTS.md` | Architecture, conventions, commands, security/CST rules and definition of done |
@@ -1386,14 +1559,11 @@ Solver execution requires a separate safety design and explicit user gate.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Security, limitations, and license
+## Security and limitations
 
 - Security guidance: [SECURITY.md](SECURITY.md)
 - Detailed demo prompts: [DEMO_PROMPTS.md](DEMO_PROMPTS.md)
 - Architecture companion: [docs/architecture.md](docs/architecture.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
-- License: [MIT](LICENSE)
 
 Prompt2CST v0.5.0b1 is beta software for education and prototyping.
-
-MIT © 2026 Mithun Kumar J.

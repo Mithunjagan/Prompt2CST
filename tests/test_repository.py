@@ -1,7 +1,10 @@
+import os
 import re
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from prompt2cst.cst_bridge import default_output_dir
 
@@ -38,6 +41,11 @@ class RepositoryReleaseTests(unittest.TestCase):
 
     def test_editable_checkout_uses_local_output_directory(self) -> None:
         self.assertEqual(default_output_dir(), ROOT / "outputs")
+
+    def test_output_directory_can_use_a_roomier_drive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(os.environ, {"PROMPT2CST_OUTPUT_DIR": directory}):
+                self.assertEqual(default_output_dir(), Path(directory).resolve())
 
     def test_no_openrouter_key_is_committed(self) -> None:
         key_pattern = re.compile(r"sk-or-v1-[A-Za-z0-9_-]{16,}")

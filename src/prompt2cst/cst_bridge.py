@@ -37,6 +37,10 @@ DEFAULT_PROGID = "CSTStudio.Application.2026"
 def default_output_dir() -> Path:
     """Use the checkout output folder, with a per-user installed fallback."""
 
+    configured = os.getenv("PROMPT2CST_OUTPUT_DIR")
+    if configured:
+        return Path(configured).expanduser().resolve()
+
     source_root = Path(__file__).resolve().parents[2]
     if (source_root / "pyproject.toml").is_file():
         return source_root / "outputs"
@@ -653,10 +657,16 @@ End Sub
             mcs_file = out_dir / f"{result_stem}_export.mcs"
             mcs_file.write_text(export_vba, encoding="utf-8")
 
+            self._trace_com("ExtractResults.Dispatch", "started", project_path=str(path), artifact_tag=safe_tag)
             with self._application() as app:
+                self._trace_com("ExtractResults.Dispatch", "completed", project_path=str(path), artifact_tag=safe_tag)
                 app.OpenFile(str(path))
+                self._trace_com("ExtractResults.OpenFile", "completed", project_path=str(path), artifact_tag=safe_tag)
                 project = app.Active3D()
+                self._trace_com("ExtractResults.Active3D", "completed", project_path=str(path), artifact_tag=safe_tag)
+                self._trace_com("ExtractResults.RunScript", "started", project_path=str(path), artifact_tag=safe_tag)
                 project.RunScript(str(mcs_file.resolve()))
+                self._trace_com("ExtractResults.RunScript", "completed", project_path=str(path), artifact_tag=safe_tag)
             s11_points = parse_cst_ascii_curve(s11_txt) if s11_txt.exists() else []
             touchstone = parse_touchstone_s1p(s11_s1p) if s11_s1p.exists() else []
             raw_extracted = {
@@ -701,6 +711,8 @@ End Sub
             raw_extracted["raw_results_path"] = str(raw_json)
 
         except Exception as exc:
+            self._trace_com("ExtractResults", "error", project_path=str(path), artifact_tag=artifact_tag,
+                            error=f"{type(exc).__name__}: {exc}")
             return {
                 "status": "error",
                 "error": str(exc),

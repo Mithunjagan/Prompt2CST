@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +24,9 @@ from PySide6.QtQuickControls2 import QQuickStyle
 
 from . import __version__
 from .agent import OpenRouterAgent, format_exception_details
+from .autonomous import DesignRun, run_design
 from .capabilities import capability_browser
+from .cst_bridge import default_output_dir
 from .orchestration import (
     ModelRole,
     OpenAICompatibleProvider,
@@ -132,6 +136,123 @@ class ModelWorker(QObject):
             self.failed.emit(format_exception_details(exc))
 
 
+class LocalDesignWorker(QObject):
+    """Run the deterministic, zero-key design workflow off the GUI thread."""
+
+    log = Signal(str)
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        prompt: str,
+        project_dir: str | Path,
+        dataset_path: str = "",
+        mode: str = "dry-run",
+        use_local_ai: bool = False,
+    ) -> None:
+        super().__init__()
+        self.prompt = prompt
+        self.project_dir = Path(project_dir)
+        self.dataset_path = dataset_path
+        self.mode = mode
+        self.use_local_ai = use_local_ai
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            datasets = [self.dataset_path] if self.dataset_path else []
+            self.log.emit("Extracting RF requirements locally")
+            if datasets:
+                self.log.emit(f"Validating dataset: {Path(datasets[0]).name}")
+            result = run_design(
+                self.prompt,
+                self.project_dir,
+                mode=self.mode,
+                datasets=datasets,
+                progress=self.log.emit,
+                use_local_ai=self.use_local_ai,
+            )
+            self.completed.emit(_local_design_summary(result))
+        except Exception as exc:
+            self.failed.emit(format_exception_details(exc))
+
+
+def _local_design_summary(result: DesignRun) -> dict[str, str]:
+    requirements = json.loads(Path(result.artifacts["requirements"]).read_text(encoding="utf-8"))
+    selected = json.loads(Path(result.artifacts["selected_architecture"]).read_text(encoding="utf-8"))
+    design_ir = json.loads(Path(result.artifacts["design_ir"]).read_text(encoding="utf-8"))
+    evidence = json.loads(Path(result.artifacts["evidence"]).read_text(encoding="utf-8"))
+    lines = [
+        "# Autonomous local design plan",
+        "",
+        f"- **Selected topology:** `{selected['topology']}`",
+        f"- **Target band:** {requirements['frequency_min_ghz']:.4f}–{requirements['frequency_max_ghz']:.4f} GHz",
+        f"- **Target S11:** {requirements['target_s11_db']:.1f} dB",
+        f"- **Execution readiness:** `{design_ir['execution_readiness']}`",
+        f"- **Project:** `{result.project_dir}`",
+    ]
+    local_ai = requirements.get("local_ai")
+    if isinstance(local_ai, dict):
+        lines.append(
+            f"- **Local AI family check:** `{local_ai.get('status', 'invalid')}` "
+            "(advisory only; deterministic requirements retained)"
+        )
+    datasets = evidence.get("datasets", [])
+    if datasets:
+        assessment = datasets[0].get("target_assessment") or {}
+        lines.extend([
+            "",
+            "## Faculty dataset assessment",
+            "",
+            f"- Status: `{assessment.get('status', 'NOT_EVALUATED')}`",
+            f"- Designs: {datasets[0].get('design_count', 0)}",
+            f"- Samples: {datasets[0].get('sample_count', 0)}",
+            f"- Best S11 near target: {assessment.get('best_s11_at_target_db', 'n/a')} dB",
+            f"- Safe as optimizer seed: {'Yes' if assessment.get('use_as_optimizer_seed') else 'No'}",
+            f"- Manufacturing use: `{datasets[0].get('manufacturing_use', 'UNKNOWN')}`",
+        ])
+    lines.extend([
+        "",
+        "## Validation boundary",
+        "",
+        (
+            "A deterministic openEMS geometry and solver project was generated. "
+            "No EM solver was run, and no simulated or measured performance was invented."
+            if result.mode == "openems" else (
+                "openEMS FDTD completed and produced port S11 and impedance. "
+                "Gain, efficiency, pattern, tolerances, and fabrication remain unverified."
+                if result.mode == "openems-simulate"
+                else "This run created a deterministic engineering plan only. No EM solver was run, and no simulated or measured performance was invented."
+            )
+        ),
+    ])
+    if result.mode == "openems-simulate":
+        measured = json.loads(Path(result.artifacts["simulation_result"]).read_text(encoding="utf-8"))
+        lines.extend([
+            "", "## Simulated by openEMS FDTD", "",
+            f"- S11 at target: {measured['s11_db']:.2f} dB",
+            f"- Input impedance: {measured['z_real_ohm']:.2f} + j{measured['z_imag_ohm']:.2f} Ω",
+            f"- S11 threshold at this mesh: {'Yes' if measured['target_met'] else 'No'}",
+            f"- Mesh convergence: {measured['mesh_convergence']}",
+            f"- Full sweep: `{measured['raw_results']}`",
+        ])
+    activity = "\n".join([
+        "Architecture: autonomous local engine",
+        "Cost: zero remote API calls",
+        f"Status: {result.status}",
+        f"Selected topology: {result.selected_topology}",
+        f"Project directory: {result.project_dir}",
+        "Artifacts:",
+        *[f"  {name}: {path}" for name, path in result.artifacts.items()],
+    ])
+    return {
+        "assistant_text": "\n".join(lines),
+        "activity_text": activity,
+        "project_dir": str(result.project_dir),
+    }
+
+
 class ApprovalRequest:
     def __init__(
         self,
@@ -190,6 +311,8 @@ class Prompt2CSTController(QObject):
         self._agent_worker: AgentWorker | None = None
         self._model_thread: QThread | None = None
         self._model_worker: ModelWorker | None = None
+        self._local_thread: QThread | None = None
+        self._local_worker: LocalDesignWorker | None = None
         self._role_configs = role_configs_from_environment(self._models[0])
         self._explicit_role_models: set[ModelRole] = {
             role
@@ -325,6 +448,94 @@ class Prompt2CSTController(QObject):
     @Slot(str, result=str)
     def familyExample(self, family_id: str) -> str:
         return EXAMPLE_PROMPTS.get(family_id, EXAMPLE_PROMPTS["auto"])
+
+    @Slot(str, str)
+    def runLocalAutonomous(self, prompt: str, dataset_url: str) -> None:
+        self._run_local(prompt, dataset_url, "dry-run")
+
+    @Slot(str, str)
+    def runLocalAutonomousAI(self, prompt: str, dataset_url: str) -> None:
+        self._run_local(prompt, dataset_url, "dry-run", use_local_ai=True)
+
+    @Slot(str, str)
+    def runLocalOpenEMS(self, prompt: str, dataset_url: str) -> None:
+        self._run_local(prompt, dataset_url, "openems")
+
+    @Slot(str, str)
+    def runLocalOpenEMSSimulate(self, prompt: str, dataset_url: str) -> None:
+        self._run_local(prompt, dataset_url, "openems-simulate")
+
+    def _run_local(
+        self, prompt: str, dataset_url: str, mode: str, *, use_local_ai: bool = False
+    ) -> None:
+        if self._busy:
+            return
+        request = prompt.strip()
+        if not request:
+            self.showError.emit("Describe the antenna you want to design.")
+            return
+        dataset_path = ""
+        if dataset_url.strip():
+            url = QUrl(dataset_url.strip())
+            dataset_path = url.toLocalFile() if url.isLocalFile() else dataset_url.strip()
+            if not Path(dataset_path).is_file():
+                self.showError.emit("The selected dataset ZIP was not found.")
+                return
+        slug = re.sub(r"[^a-z0-9]+", "-", request.lower()).strip("-")[:36] or "antenna"
+        timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
+        project_dir = default_output_dir() / "autonomous-projects" / f"{timestamp}-{slug}"
+        self._active_preview_prompt = ""
+        self._active_preview_plan_id = ""
+        self._reviewing_preview = False
+        self.canBuildChanged.emit()
+        self._set_assistant_text("")
+        activity = "\n".join([
+            "Architecture: autonomous local engine",
+            "Remote model/API: disabled",
+            f"Local Ollama advisory: {'enabled' if use_local_ai else 'disabled'}",
+            f"Dataset: {dataset_path or 'none'}",
+            f"Project: {project_dir}",
+        ])
+        self._set_activity_text(activity)
+        record = self._history.create(
+            prompt=request,
+            family_id="auto",
+            mode=mode,
+            phase=("openems_simulation" if mode == "openems-simulate" else "openems_generation" if mode == "openems" else "planning"),
+            role="deterministic_local_engine",
+            model="zero-key local engine",
+            activity_text=activity,
+        )
+        self._running_history_id = record.id
+        self._running_prompt = request
+        self._running_phase = "openems_simulation" if mode == "openems-simulate" else "openems_generation" if mode == "openems" else "planning"
+        self.promptHistoryChanged.emit()
+        self._set_busy(True)
+        self._set_status(
+            "Running local openEMS simulation…"
+            if mode == "openems-simulate"
+            else "Generating autonomous openEMS project…"
+            if mode == "openems"
+            else "Running autonomous local design…"
+        )
+
+        worker = LocalDesignWorker(
+            request, project_dir, dataset_path, mode=mode, use_local_ai=use_local_ai
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.log.connect(self._append_log)
+        worker.completed.connect(self._local_completed)
+        worker.failed.connect(self._local_failed)
+        worker.completed.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._clear_local_thread)
+        self._local_worker = worker
+        self._local_thread = thread
+        thread.start()
 
     @Slot()
     def clearResults(self) -> None:
@@ -622,6 +833,30 @@ class Prompt2CSTController(QObject):
         self._model_worker = None
         self._model_thread = None
 
+    @Slot(object)
+    def _local_completed(self, summary: dict[str, str]) -> None:
+        self._set_assistant_text(summary["assistant_text"])
+        self._set_activity_text(summary["activity_text"])
+        self._save_local_history("COMPLETED")
+        self._set_busy(False)
+        self._set_status("Local autonomous plan completed")
+
+    @Slot(str)
+    def _local_failed(self, error: str) -> None:
+        self._set_activity_text(f"{self._activity_text}\n\nERROR\n{error}")
+        self._set_assistant_text(
+            "## Local autonomous run failed\n\nOpen **Activity** for the exact error."
+        )
+        self._save_local_history("FAILED")
+        self._set_busy(False)
+        self._set_status("Local autonomous run failed")
+        self.showError.emit(error)
+
+    @Slot()
+    def _clear_local_thread(self) -> None:
+        self._local_worker = None
+        self._local_thread = None
+
     @Slot(str)
     def _append_log(self, message: str) -> None:
         prefix = "\n" if self._activity_text else ""
@@ -733,6 +968,27 @@ class Prompt2CSTController(QObject):
         except (FileNotFoundError, KeyError, ValueError):
             self._running_history_id = ""
             return
+        self._active_history_id = self._running_history_id
+        self._running_history_id = ""
+        self._running_prompt = ""
+        self._running_phase = ""
+        self.promptHistoryChanged.emit()
+
+    def _save_local_history(self, status: str) -> None:
+        if not self._running_history_id:
+            return
+        try:
+            self._history.update(
+                self._running_history_id,
+                status=status,
+                assistant_text=self._assistant_text,
+                activity_text=self._activity_text,
+                session_id="",
+                plan_id="",
+                approval_hash="",
+            )
+        except (FileNotFoundError, KeyError, ValueError):
+            pass
         self._active_history_id = self._running_history_id
         self._running_history_id = ""
         self._running_prompt = ""

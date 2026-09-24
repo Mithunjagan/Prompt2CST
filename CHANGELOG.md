@@ -4,6 +4,38 @@ All notable Prompt2CST changes are documented here.
 
 ## Unreleased
 
+- Added deterministic openEMS project generators for PIFA, axial-mode helix,
+  five-element Yagi-Uda, pyramidal horn, and exponential Vivaldi antennas.
+  Each generator emits a strict canonical plan, inspectable executable Python,
+  family-appropriate feed, optional NF2FF setup, result-extraction path, provenance, and
+  explicit backend availability. Autonomous CLI and desktop workflows can
+  generate these projects without an API key and never fabricate solver data.
+  A bounded \`openems-run\` command rejects modified generated scripts and low-disk
+  runs before launching the solver.
+- Added prompt-to-FDTD execution in the CLI and desktop, a resumable PIFA
+  length/feed search, and iterative mesh-convergence checks within the run
+  budget, retaining the last completed result if a finer mesh times out. Solver results carry
+  their exact project hash and reject nonfinite or mismatched sweeps. Fixed a
+  shorted Yagi feed and a Vivaldi feed that missed its copper edges.
+  Optional NF2FF runs now extract directivity, radiation efficiency, and
+  realized gain after a completed solver run.
+- Added a strict, cited antenna-family knowledge catalogue covering 13 core
+  wire, planar, aperture, array, and reflector families. Architecture artifacts
+  now include the selected family's sizing-rule IDs, limitations, source URLs,
+  and honest CST implementation status; the catalogue is queryable locally
+  through \`antenna-knowledge\`.
+- Added safe, local ingestion of parameterized S11 sweep ZIP datasets with
+  SHA-256 provenance, target-frequency suitability checks, one-factor
+  sensitivity analysis, normalized artifacts, and autonomous-project evidence
+  integration. Opaque geometry parameters cannot be promoted to manufacturing
+  inputs without an explicit mapping.
+- Added a zero-key **Autonomous Local** desktop workflow with optional dataset
+  selection, background project generation, persisted history, explicit
+  solver limitations, and direct review of the generated artifact paths.
+- Quarantine CST Stage-B projects after native Save failures, extend bounded
+  result-export timeouts, and drain large multiprocessing results before worker
+  joins to avoid false COM timeouts and unsafe in-place resumes.
+
 - Added DesignIR 1.0, safe expressions, deterministic RF calculations,
   capability validation, a modular CST compiler, legacy-family adapters,
   role-based provider routing, persistent workflow state, immutable preview

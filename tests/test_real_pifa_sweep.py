@@ -2,11 +2,76 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
-from prompt2cst.real_pifa_sweep import RealPifaImpedanceSweep
+from prompt2cst.real_pifa_sweep import (
+    RESULT_EXTRACTION_TIMEOUT_SECONDS,
+    RealPifaImpedanceSweep,
+)
+
+
+def _large_payload_worker(queue, _output_dir, _operation, _project_path, _kwargs, _trace_path):
+    queue.put({"status": "completed", "result": {"samples": list(range(250_000))}})
 
 
 class RealPifaSweepTests(unittest.TestCase):
+    def test_bounded_com_drains_large_result_before_join(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "working_project.cst"
+            project.write_text("mock", encoding="utf-8")
+            sweep = RealPifaImpedanceSweep(root)
+            with patch("prompt2cst.real_pifa_sweep._bounded_com_worker", _large_payload_worker):
+                result = sweep._com_call("extract_results", project, timeout_seconds=10.0)
+            self.assertEqual(len(result["samples"]), 250_000)
+            sweep.cache.close()
+
+    def test_live_candidate_uses_extended_result_extraction_timeout(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "working_project.cst"
+            project.write_text("mock", encoding="utf-8")
+            sweep = RealPifaImpedanceSweep(root, use_bounded_com=False)
+            calls = []
+
+            def com_call(operation, _path, **kwargs):
+                calls.append((operation, kwargs.get("timeout_seconds")))
+                if operation == "update_parameters":
+                    return {"status": "completed", "updated": True}
+                if operation == "read_parameter":
+                    return kwargs["name"] == "radiator_length_mm" and 21.75 or 0.25
+                if operation == "run_solver":
+                    return {"status": "completed", "solver_run": True}
+                raw = {}
+                for suffix, key in ((".txt", "ascii_path"), (".s1p", "touchstone_path"), (".json", "raw_results_path")):
+                    artifact = root / f"result{suffix}"
+                    artifact.write_text("mock", encoding="utf-8")
+                    raw[key] = str(artifact)
+                return {"status": "completed", "extracted": {
+                    "s11_db": (-15.0, "dB"), "f_res_ghz": (2.45, "GHz"), "vswr": (1.4, "1"),
+                    "zin_re": (50.0, "Ohm"), "zin_im": (0.0, "Ohm"),
+                }, "raw_extracted": raw, "unavailable": []}
+
+            sweep._com_call = com_call
+            sweep._run_live(project, 21.75, 0.25, "candidate")
+            self.assertIn(("extract_results", RESULT_EXTRACTION_TIMEOUT_SECONDS), calls)
+            sweep.cache.close()
+
+    def test_resume_quarantines_project_after_cst_save_failure(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "checkpoint.json").write_text(json.dumps({
+                "status": "blocked_cst_com",
+                "blocker": {
+                    "operation": "update_parameters",
+                    "error": "Saving of C:\\\\p2cst\\\\working.cst failed.",
+                },
+            }), encoding="utf-8")
+            sweep = RealPifaImpedanceSweep(root, resume=True, use_bounded_com=False)
+            with self.assertRaisesRegex(RuntimeError, "CST_RESTART_REQUIRED"):
+                sweep.run()
+            sweep.cache.close()
+
     def _bridge(self, sweep, root):
         calls = []
         project = root / "working_project.cst"
