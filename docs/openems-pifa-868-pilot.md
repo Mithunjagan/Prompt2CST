@@ -88,8 +88,17 @@ S11 −13.17 dB and passed the adjacent 2.344×→2.930× port comparison
 (ΔS11 0.028 dB, ΔZ 6.88 Ω). This establishes only a local two-mesh
 comparison, not domain or far-field convergence. These experimental runs are under
 `D:\Prompt2CST-LocalAI\real-em\pifa-868-edge-mesh-v4-20260924\` and
-`D:\Prompt2CST-LocalAI\real-em\pifa-868-v4-search-v1\`. Further refinement
-and a domain check are still required before accepting the design.
+`D:\Prompt2CST-LocalAI\real-em\pifa-868-v4-search-v1\`.
+
+The same 2.930× candidate was then rerun with 25% more air padding on all
+axes while keeping the effective mesh cap fixed. The **real openEMS** port
+comparison passed: S11 −13.170→−13.159 dB at 868 MHz, ΔS11 0.011 dB and
+ΔZ 0.090 Ω. The saved report is `domain_convergence.json` beside that
+candidate's 2.930× `results.json`. This is now a matched, adjacent-mesh- and
+air-domain-converged **port result** at 868 MHz; it does not establish
+far-field gain, efficiency, pattern, fabrication tolerance or measured
+hardware performance. The full prompt-to-report workflow and 915 MHz case
+also remain to be demonstrated.
 
 ## Remaining gates before a build claim
 

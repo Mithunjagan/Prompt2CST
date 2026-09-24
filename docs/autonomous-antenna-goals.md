@@ -22,9 +22,9 @@ pilot evidence, and a repeatable test command. **Stop when:** the complete
 offline suite, compilation, package/dependency checks, and UI lint pass; the
 pilot report identifies which numbers came from actual openEMS output and
 which checks remain outstanding. **Current state:** partially complete; the
-868 MHz pilot exists, but its matched geometry has not passed the larger-box
-domain, mesh, and far-field checks together. A later unmatched 868 MHz run
-passed a controlled port-domain comparison; that is progress, not completion.
+868 MHz pilot exists. A later matched candidate passed an adjacent-mesh and
+larger-box comparison for **port S11 and impedance**, but no far-field or
+915 MHz check has passed; that is progress, not completion.
 
 ## Goal 1 — Make one PIFA solve numerically credible
 
@@ -34,9 +34,11 @@ S11/impedance. Add far-field convergence for gain, efficiency, and pattern,
 with explicit thresholds and saved comparison files. **Stop when:** real
 openEMS runs at both 868 and 915 MHz meet their requested S11 targets and
 the comparisons pass, or the app records a clear non-passing outcome. Neither
-a single mesh nor a single NF2FF run qualifies. The current PIFA air-box
-clearance is only about 40 mm in places, so the earlier 868 MHz pilot is
-provisional until this gate is met.
+a single mesh nor a single NF2FF run qualifies. The original PIFA pilot air-box
+clearance was only about 40 mm in places, so that earlier 868 MHz result is
+provisional until this gate is met. **Current state:** one 868 MHz v4 candidate
+passed the port mesh/domain checks; its far field, 915 MHz counterpart and
+autonomous end-to-end selection remain unverified.
 
 ## Goal 2 — Close the optimization loop
 

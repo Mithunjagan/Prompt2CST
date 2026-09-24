@@ -4,6 +4,10 @@ All notable Prompt2CST changes are documented here.
 
 ## Unreleased
 
+- A real 868 MHz v4 PIFA candidate passed adjacent-mesh S11/impedance
+  convergence and a controlled 25%-larger-air-domain comparison at 868 MHz.
+  Far-field, 915 MHz, tolerance and physical tests remain unverified.
+
 - Added a PIFA-only fabrication *proposal* to simulated runs: exact-plan-hash
   geometry dimensions, millimetre top/side SVG views, a BOM and explicit
   material/feed/tolerance unknowns. It is not a manufacturing-ready drawing
