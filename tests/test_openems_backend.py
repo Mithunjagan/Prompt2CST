@@ -14,12 +14,14 @@ from prompt2cst.openems_backend import (
     backend_status,
     build_project,
     pifa_dimensions,
+    pifa_search_parameters,
     render_python,
     sampled_s11_band,
     write_project,
     execute_project,
     search_pifa,
     validate_result,
+    verify_domain_convergence,
     verify_mesh_convergence,
 )
 
@@ -53,10 +55,32 @@ class OpenEMSBackendTests(unittest.TestCase):
         self.assertNotEqual(baseline.canonical_sha256, tuned.canonical_sha256)
         self.assertGreater(tuned.port.start[0], baseline.port.start[0])
         dimensions = pifa_dimensions(tuned)
+        length_scale, feed_fraction = pifa_search_parameters(tuned)
+        self.assertAlmostEqual(length_scale, 1.2)
+        self.assertAlmostEqual(feed_fraction, 0.7)
         self.assertGreater(dimensions["radiator_length_mm"], pifa_dimensions(baseline)["radiator_length_mm"])
         self.assertGreater(dimensions["feed_clearance_from_short_wall_mm"], 0)
         with self.assertRaisesRegex(ValueError, "require family=pifa"):
             build_project("helix", 2.45e9, pifa_feed_fraction=0.7)
+
+    def test_pifa_airbox_has_quarter_wavelength_clearance(self) -> None:
+        for frequency_hz in (868e6, 915e6, 2.45e9):
+            with self.subTest(frequency_hz=frequency_hz):
+                project = build_project("pifa", frequency_hz)
+                quarter_wavelength_mm = 299_792_458.0 / project.frequency_min_hz * 250
+                sx, sy, sz = project.simulation_box_mm
+                coordinates = [
+                    point[axis]
+                    for primitive in project.primitives
+                    for point in (primitive.start, primitive.stop)
+                    for axis in range(3)
+                ]
+                for axis, half_box in enumerate((sx / 2, sy / 2, sz / 2)):
+                    axis_coordinates = coordinates[axis::3]
+                    self.assertGreaterEqual(
+                        half_box - max(abs(value) for value in axis_coordinates),
+                        quarter_wavelength_mm - 1e-9,
+                    )
 
     def test_rendered_script_uses_official_port_and_result_api(self) -> None:
         script = render_python(build_project("pifa", 2.45e9))
@@ -304,6 +328,62 @@ class OpenEMSBackendTests(unittest.TestCase):
             self.assertEqual(report["status"], "NOT_CONVERGED")
             self.assertAlmostEqual(report["s11_delta_db"], 4.0)
             self.assertNotEqual(report["baseline_project_sha256"], report["refined_project_sha256"])
+
+    def test_domain_check_enlarges_air_padding_and_reuses_valid_results(self) -> None:
+        def fake_execute(candidate_dir, **_kwargs):
+            root = Path(candidate_dir)
+            project = OpenEMSProject.model_validate_json(
+                (root / "openems_plan.json").read_text(encoding="utf-8")
+            )
+            frequencies = [
+                project.frequency_min_hz
+                + i * (project.frequency_max_hz - project.frequency_min_hz) / 500
+                for i in range(501)
+            ]
+            enlarged = "domain_enlarged" in str(root)
+            s11 = -11.5 if enlarged else -12.0
+            result = {
+                "source": "OPENEMS_FDTD",
+                "project_sha256": project.canonical_sha256,
+                "frequency_hz": frequencies,
+                "s11_db": [s11] * 501,
+                "z_real_ohm": [52.0 if enlarged else 50.0] * 501,
+                "z_imag_ohm": [1.0] * 501,
+                "best_frequency_hz": frequencies[0],
+                "best_s11_db": s11,
+            }
+            (root / "results.json").write_text(json.dumps(result), encoding="utf-8")
+            return {"result": result}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            original = build_project("pifa", 868e6)
+            write_project(original, tmp)
+            with patch("prompt2cst.openems_backend.execute_project", side_effect=fake_execute) as runner:
+                report = verify_domain_convergence(tmp)
+                self.assertEqual(runner.call_count, 2)
+                resumed = verify_domain_convergence(tmp)
+                self.assertEqual(runner.call_count, 2)
+            self.assertEqual(report["status"], "CONVERGED")
+            self.assertEqual(resumed["real_runs_this_call"], 0)
+            self.assertTrue(all(
+                new > old for new, old in zip(
+                    report["enlarged_box_mm"], report["baseline_box_mm"]
+                )
+            ))
+            self.assertNotEqual(
+                report["baseline_project_sha256"], report["enlarged_project_sha256"]
+            )
+            enlarged_plan = OpenEMSProject.model_validate_json(
+                (Path(tmp) / "domain_enlarged_1.25" / "openems_plan.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertAlmostEqual(
+                min(original.mesh_max_mm, *(size / 20 for size in original.simulation_box_mm)),
+                min(enlarged_plan.mesh_max_mm, *(size / 20 for size in enlarged_plan.simulation_box_mm)),
+            )
+            with self.assertRaisesRegex(ValueError, "padding_factor"):
+                verify_domain_convergence(tmp, padding_factor=1.0)
 
     def test_mesh_check_records_inconclusive_timeout_without_losing_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -378,6 +378,20 @@ def pifa_dimensions(project: OpenEMSProject) -> dict[str, float]:
     }
 
 
+def pifa_search_parameters(project: OpenEMSProject) -> tuple[float, float]:
+    """Recover the two bounded search controls from exact PIFA geometry."""
+    if project.family != "pifa":
+        raise ValueError("PIFA search parameters require a PIFA project")
+    center_hz = (project.frequency_min_hz + project.frequency_max_hz) / 2
+    reference_length = 0.64 * (C0 / center_hz * 1000 / 4)
+    dimensions = pifa_dimensions(project)
+    length = dimensions["radiator_length_mm"]
+    return (
+        round(length / reference_length, 4),
+        round(dimensions["feed_distance_from_short_edge_mm"] / length, 4),
+    )
+
+
 def sampled_s11_band(
     result: dict[str, object], target_frequency_hz: float, threshold_db: float = -10.0
 ) -> dict[str, object] | None:
@@ -415,7 +429,7 @@ def _search_pifa_unlocked(
     output_dir: str | Path,
     *,
     length_scales: tuple[float, ...] = (1.4, 1.2, 1.0),
-    feed_fractions: tuple[float, ...] = (0.12, 0.22, 0.4),
+    feed_fractions: tuple[float, ...] = (0.10, 0.22, 0.4),
     target_s11_db: float = -10.0,
     max_runs: int = 9,
     timeout_seconds: int = 600,
@@ -530,7 +544,7 @@ def search_pifa(
     output_dir: str | Path,
     *,
     length_scales: tuple[float, ...] = (1.4, 1.2, 1.0),
-    feed_fractions: tuple[float, ...] = (0.12, 0.22, 0.4),
+    feed_fractions: tuple[float, ...] = (0.10, 0.22, 0.4),
     target_s11_db: float = -10.0,
     max_runs: int = 9,
     timeout_seconds: int = 600,
@@ -667,6 +681,159 @@ def verify_mesh_convergence(
         "impedance_tolerance_ohm": impedance_tolerance_ohm,
     }
     (root / "mesh_convergence.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
+    return report
+
+
+def verify_domain_convergence(
+    project_dir: str | Path,
+    *,
+    padding_factor: float = 1.25,
+    timeout_seconds: int = 1200,
+    s11_tolerance_db: float = 1.0,
+    impedance_tolerance_ohm: float = 10.0,
+) -> dict[str, object]:
+    """Move every absorbing boundary outward and compare real FDTD ports.
+
+    Mesh density and geometry remain fixed. The surrounding air padding grows
+    independently on each axis; a cached result is used only if its plan hash
+    matches the validated plan. This checks domain sensitivity, not mesh or
+    far-field convergence.
+    """
+    if not math.isfinite(padding_factor) or not 1.0 < padding_factor <= 2.0:
+        raise ValueError("padding_factor must be greater than 1 and at most 2")
+    if timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be positive")
+    root = Path(project_dir).resolve()
+    plan_path = root / "openems_plan.json"
+    if not plan_path.is_file():
+        raise FileNotFoundError("generated openEMS plan is required")
+    project = OpenEMSProject.model_validate_json(plan_path.read_text(encoding="utf-8"))
+    baseline_path = root / "results.json"
+    baseline = None
+    real_runs = 0
+    if baseline_path.is_file():
+        try:
+            cached = json.loads(baseline_path.read_text(encoding="utf-8"))
+            validate_result(cached, project)
+        except (RuntimeError, ValueError, TypeError):
+            pass
+        else:
+            baseline = cached
+    if baseline is None:
+        baseline = execute_project(root, timeout_seconds=timeout_seconds)["result"]
+        real_runs += 1
+
+    # The renderer caps the smoothing step at box_size/20. Preserve that
+    # effective cap when the air box grows; otherwise this would test a
+    # coarser mesh and a larger domain at the same time.
+    effective_mesh_max_mm = min(
+        project.mesh_max_mm,
+        *(size / 20 for size in project.simulation_box_mm),
+    )
+    geometry_points = [
+        point
+        for primitive in project.primitives
+        for point in (primitive.start, primitive.stop)
+        if point is not None
+    ]
+    geometry_points.extend(
+        point for primitive in project.primitives
+        for point in (primitive.points or [])
+    )
+    geometry_points.extend((project.port.start, project.port.stop))
+    new_box = []
+    for axis, box_size in enumerate(project.simulation_box_mm):
+        occupied = max(abs(point[axis]) for point in geometry_points)
+        occupied = max([occupied, *(
+            abs(point[axis]) + primitive.radius_mm
+            for primitive in project.primitives if primitive.kind == "cylinder"
+            for point in (primitive.start, primitive.stop)
+        )])
+        padding = box_size / 2 - occupied
+        if padding <= 0:
+            raise ValueError("geometry must remain inside the simulation box")
+        new_box.append(2 * (occupied + padding_factor * padding))
+    enlarged = OpenEMSProject.model_validate({
+        **project.model_dump(mode="python"),
+        "simulation_box_mm": tuple(new_box),
+        "mesh_max_mm": effective_mesh_max_mm,
+    })
+    enlarged_dir = root / f"domain_enlarged_{padding_factor:.2f}"
+    write_project(enlarged, enlarged_dir)
+    enlarged_path = enlarged_dir / "results.json"
+    enlarged_result = None
+    if enlarged_path.is_file():
+        try:
+            cached = json.loads(enlarged_path.read_text(encoding="utf-8"))
+            validate_result(cached, enlarged)
+        except (RuntimeError, ValueError, TypeError):
+            pass
+        else:
+            enlarged_result = cached
+    if enlarged_result is None:
+        try:
+            enlarged_result = execute_project(
+                enlarged_dir, timeout_seconds=timeout_seconds
+            )["result"]
+        except subprocess.TimeoutExpired:
+            report = {
+                "source": "OPENEMS_FDTD",
+                "status": "INCONCLUSIVE_TIMEOUT",
+                "real_runs_this_call": real_runs + 1,
+                "baseline_project_sha256": project.canonical_sha256,
+                "enlarged_project_sha256": enlarged.canonical_sha256,
+                "baseline_results": str(baseline_path),
+                "enlarged_results": None,
+                "timeout_seconds": timeout_seconds,
+            }
+            (root / "domain_convergence.json").write_text(
+                json.dumps(report, indent=2) + "\n", encoding="utf-8"
+            )
+            return report
+        real_runs += 1
+    center_hz = (project.frequency_min_hz + project.frequency_max_hz) / 2
+    baseline_index = min(
+        range(501), key=lambda i: abs(baseline["frequency_hz"][i] - center_hz)
+    )
+    enlarged_index = min(
+        range(501), key=lambda i: abs(enlarged_result["frequency_hz"][i] - center_hz)
+    )
+    s11_delta = abs(
+        baseline["s11_db"][baseline_index]
+        - enlarged_result["s11_db"][enlarged_index]
+    )
+    impedance_delta = abs(complex(
+        baseline["z_real_ohm"][baseline_index]
+        - enlarged_result["z_real_ohm"][enlarged_index],
+        baseline["z_imag_ohm"][baseline_index]
+        - enlarged_result["z_imag_ohm"][enlarged_index],
+    ))
+    report = {
+        "source": "OPENEMS_FDTD",
+        "status": (
+            "CONVERGED" if s11_delta <= s11_tolerance_db
+            and impedance_delta <= impedance_tolerance_ohm else "NOT_CONVERGED"
+        ),
+        "real_runs_this_call": real_runs,
+        "center_frequency_hz": center_hz,
+        "padding_factor": padding_factor,
+        "baseline_box_mm": project.simulation_box_mm,
+        "enlarged_box_mm": tuple(new_box),
+        "effective_mesh_max_mm": effective_mesh_max_mm,
+        "baseline_project_sha256": project.canonical_sha256,
+        "enlarged_project_sha256": enlarged.canonical_sha256,
+        "baseline_results": str(baseline_path),
+        "enlarged_results": str(enlarged_path),
+        "baseline_s11_db": baseline["s11_db"][baseline_index],
+        "enlarged_s11_db": enlarged_result["s11_db"][enlarged_index],
+        "s11_delta_db": s11_delta,
+        "impedance_delta_ohm": impedance_delta,
+        "s11_tolerance_db": s11_tolerance_db,
+        "impedance_tolerance_ohm": impedance_tolerance_ohm,
+    }
+    (root / "domain_convergence.json").write_text(
         json.dumps(report, indent=2) + "\n", encoding="utf-8"
     )
     return report
@@ -839,11 +1006,19 @@ def _pifa(
     length, width, height = 0.64 * q * length_scale, 0.36 * q, max(3.0, 0.08 * q)
     ground_l, ground_w = length + 20, max(width + 20, 35)
     feed_x = -length / 2 + feed_fraction * length
+    # Keep the nearest radiator/ground edge at least a quarter wavelength
+    # (at the lowest sweep frequency) from the PML boundary. A smaller box
+    # saved time in the pilot but did not establish domain convergence.
+    air_padding_mm = C0 / fmin * 1000 / 4
     common = _common(fmin, fmax)
     base_materials = common.pop("materials")
     return OpenEMSProject(
         family="pifa", **common,
-        simulation_box_mm=(ground_l + 80, ground_w + 80, 2 * (height + 40)),
+        simulation_box_mm=(
+            ground_l + 2 * air_padding_mm,
+            ground_w + 2 * air_padding_mm,
+            2 * (height + air_padding_mm),
+        ),
         materials=base_materials,
         primitives=[
             Primitive(name="ground", material="pec", kind="box", start=(-ground_l/2,-ground_w/2,0.0), stop=(ground_l/2,ground_w/2,0.0)),

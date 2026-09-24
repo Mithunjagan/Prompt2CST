@@ -4,6 +4,14 @@ All notable Prompt2CST changes are documented here.
 
 ## Unreleased
 
+- Defined separate, testable stop gates for a standalone 868/915 MHz PIFA
+  milestone. Added quarter-wavelength PIFA air padding, a controlled
+  air-domain convergence check, and bounded automatic recovery when mesh
+  refinement loses the S11 target. Real openEMS follow-up runs also exposed
+  a mesh-sensitive apparent match; reports retain that failed evidence rather
+  than claiming success. Removed the repository's MIT license file, badge,
+  and package license declaration at the project owner's request.
+
 - Added deterministic openEMS project generators for PIFA, axial-mode helix,
   five-element Yagi-Uda, pyramidal horn, and exponential Vivaldi antennas.
   Each generator emits a strict canonical plan, inspectable executable Python,

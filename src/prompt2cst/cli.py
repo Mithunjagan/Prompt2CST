@@ -31,6 +31,7 @@ from .openems_backend import (
     execute_project,
     sampled_s11_band,
     search_pifa,
+    verify_domain_convergence,
     verify_mesh_convergence,
     write_project,
 )
@@ -167,7 +168,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--length-scales", type=float, nargs="+", default=[1.4, 1.2, 1.0]
     )
     pifa_search_parser.add_argument(
-        "--feed-fractions", type=float, nargs="+", default=[0.12, 0.22, 0.4]
+        "--feed-fractions", type=float, nargs="+", default=[0.10, 0.22, 0.4]
     )
     mesh_parser = subparsers.add_parser(
         "openems-verify-mesh",
@@ -176,6 +177,13 @@ def create_parser() -> argparse.ArgumentParser:
     mesh_parser.add_argument("project_dir")
     mesh_parser.add_argument("--factor", type=float, default=1.5)
     mesh_parser.add_argument("--timeout", type=int, default=1200)
+    domain_parser = subparsers.add_parser(
+        "openems-verify-domain",
+        help="Enlarge the FDTD air domain and compare S11 and impedance",
+    )
+    domain_parser.add_argument("project_dir")
+    domain_parser.add_argument("--factor", type=float, default=1.25)
+    domain_parser.add_argument("--timeout", type=int, default=1200)
 
     link_parser = subparsers.add_parser(
         "cst-dipole-link",
@@ -320,6 +328,18 @@ def main(args: list[str] | None = None) -> int:
             )
         except (FileNotFoundError, RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
             print(f"openEMS mesh check stopped: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(result, indent=2))
+        return 0
+
+    if parsed.command == "openems-verify-domain":
+        try:
+            result = verify_domain_convergence(
+                parsed.project_dir, padding_factor=parsed.factor,
+                timeout_seconds=parsed.timeout,
+            )
+        except (FileNotFoundError, RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
+            print(f"openEMS domain check stopped: {exc}", file=sys.stderr)
             return 1
         print(json.dumps(result, indent=2))
         return 0

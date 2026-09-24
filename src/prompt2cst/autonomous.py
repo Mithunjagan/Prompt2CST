@@ -31,8 +31,10 @@ from .openems_backend import (
     build_project,
     execute_project,
     pifa_dimensions,
+    pifa_search_parameters,
     sampled_s11_band,
     search_pifa,
+    verify_domain_convergence,
     verify_mesh_convergence,
     write_project,
 )
@@ -303,11 +305,16 @@ def run_design(
                 selected_results_path = execution["results"]
                 selected_project_hash = openems_project.canonical_sha256
                 if topology == "pifa" and initial_s11 > requirements["target_s11_db"] and max_iterations > 1:
-                    mesh_reserve = min(2, max(0, max_iterations - 2))
+                    # Leave room for at least one mesh comparison and, when
+                    # the budget permits, a separate air-domain comparison.
+                    verification_reserve = min(
+                        3 if max_iterations >= 4 else 2,
+                        max(0, max_iterations - 2),
+                    )
                     search = search_pifa(
                         requirements["center_frequency_hz"], root / "openems_search",
                         target_s11_db=requirements["target_s11_db"],
-                        max_runs=min(max_iterations - 1 - mesh_reserve, 25),
+                        max_runs=min(max_iterations - 1 - verification_reserve, 25),
                         on_candidate=(
                             lambda candidate: progress(
                                 f"PIFA length {candidate['length_scale']:.2f}, "
@@ -391,9 +398,121 @@ def run_design(
                 )
                 center_s11 = measured["s11_db"][center_index]
                 target_met = center_s11 <= requirements["target_s11_db"]
+                if (
+                    topology == "pifa" and not target_met
+                    and simulation_count + 1 < max_iterations
+                ):
+                    failed_plan = OpenEMSProject.model_validate_json(
+                        (refined_dir / "openems_plan.json").read_text(encoding="utf-8")
+                    )
+                    seed_length, seed_feed = pifa_search_parameters(failed_plan)
+                    recovery_dir = root / (
+                        f"openems_recovery_mesh_{failed_plan.mesh_refinement_factor:.3f}"
+                    )
+                    try:
+                        recovery = search_pifa(
+                            requirements["center_frequency_hz"], recovery_dir,
+                            length_scales=(seed_length,),
+                            feed_fractions=(seed_feed,),
+                            target_s11_db=requirements["target_s11_db"],
+                            max_runs=min(max_iterations - simulation_count - 1, 6),
+                            mesh_refinement_factor=failed_plan.mesh_refinement_factor,
+                            on_candidate=(
+                                lambda candidate: progress(
+                                    f"Refined-mesh PIFA retune: S11 "
+                                    f"{candidate['center_s11_db']:.2f} dB"
+                                ) if progress is not None else None
+                            ),
+                        )
+                    except Exception as exc:
+                        chief.fail_task(
+                            "task_simulation", f"refined-mesh retune: {type(exc).__name__}: {exc}"
+                        )
+                        workspace.close()
+                        raise
+                    simulation_count += recovery["real_runs_this_call"]
+                    artifacts["openems_recovery_search_summary"] = str(
+                        recovery_dir / "search_summary.json"
+                    )
+                    if recovery["best"]["meets_target"]:
+                        search = recovery
+                        selected_results_path = recovery["best"]["results"]
+                        selected_project_hash = recovery["best"]["project_sha256"]
+                        mesh_root = Path(selected_results_path).parent
+                        artifacts["optimized_openems_plan"] = str(
+                            mesh_root / "openems_plan.json"
+                        )
+                        artifacts["optimized_openems_script"] = str(
+                            mesh_root / "run_openems.py"
+                        )
+                        measured = json.loads(
+                            Path(selected_results_path).read_text(encoding="utf-8")
+                        )
+                        frequencies = measured["frequency_hz"]
+                        center_index = min(
+                            range(len(frequencies)),
+                            key=lambda index: abs(
+                                frequencies[index] - requirements["center_frequency_hz"]
+                            ),
+                        )
+                        center_s11 = measured["s11_db"][center_index]
+                        target_met = center_s11 <= requirements["target_s11_db"]
+                        mesh_report = None
+                        if progress is not None:
+                            progress("PIFA recovered the target; rechecking the new winner")
+                        continue
                 if mesh_report["status"] == "CONVERGED":
                     break
                 mesh_root = refined_dir
+            domain_report = None
+            if (
+                target_met
+                and mesh_report is not None
+                and mesh_report["status"] == "CONVERGED"
+                and simulation_count < max_iterations
+            ):
+                if progress is not None:
+                    progress("Checking the selected result in a larger openEMS air domain")
+                try:
+                    domain_report = verify_domain_convergence(
+                        Path(selected_results_path).parent,
+                        padding_factor=1.25,
+                    )
+                except subprocess.TimeoutExpired:
+                    domain_report = {
+                        "source": "OPENEMS_FDTD",
+                        "status": "INCONCLUSIVE_TIMEOUT",
+                        "real_runs_this_call": 1,
+                        "enlarged_results": None,
+                    }
+                    (Path(selected_results_path).parent / "domain_convergence.json").write_text(
+                        json.dumps(domain_report, indent=2) + "\n", encoding="utf-8"
+                    )
+                except Exception as exc:
+                    chief.fail_task("task_simulation", f"domain check: {type(exc).__name__}: {exc}")
+                    workspace.close()
+                    raise
+                simulation_count += domain_report["real_runs_this_call"]
+                domain_root = Path(selected_results_path).parent
+                artifacts["domain_convergence"] = str(domain_root / "domain_convergence.json")
+                if progress is not None:
+                    progress(f"Domain comparison: {domain_report['status']}")
+                if domain_report["status"] != "INCONCLUSIVE_TIMEOUT":
+                    selected_results_path = domain_report["enlarged_results"]
+                    selected_project_hash = domain_report["enlarged_project_sha256"]
+                    enlarged_dir = Path(selected_results_path).parent
+                    artifacts["optimized_openems_plan"] = str(enlarged_dir / "openems_plan.json")
+                    artifacts["optimized_openems_script"] = str(enlarged_dir / "run_openems.py")
+                    measured = json.loads(Path(selected_results_path).read_text(encoding="utf-8"))
+                    frequencies = measured["frequency_hz"]
+                    center_index = min(
+                        range(len(frequencies)),
+                        key=lambda index: abs(
+                            frequencies[index] - requirements["center_frequency_hz"]
+                        ),
+                    )
+                    center_s11 = measured["s11_db"][center_index]
+                    target_met = center_s11 <= requirements["target_s11_db"]
             artifacts["openems_results"] = selected_results_path
             summary = {
                 "source": "OPENEMS_FDTD",
@@ -412,6 +531,7 @@ def run_design(
                 "raw_results": selected_results_path,
                 "simulations": simulation_count,
                 "mesh_convergence": mesh_report["status"] if mesh_report is not None else "NOT_RUN",
+                "domain_convergence": domain_report["status"] if domain_report is not None else "NOT_RUN",
             }
             if topology == "pifa":
                 selected_plan_path = artifacts.get("optimized_openems_plan", artifacts["openems_plan"])
@@ -439,6 +559,15 @@ def run_design(
                 "valid": True, "mode": mode, "simulation_performed": True,
                 "simulation_source": "OPENEMS_FDTD",
                 "status": (
+                    "TARGET_MET_MESH_AND_DOMAIN_CONVERGED"
+                    if target_met and mesh_report is not None
+                    and mesh_report["status"] == "CONVERGED"
+                    and domain_report is not None and domain_report["status"] == "CONVERGED"
+                    else "DOMAIN_NOT_CONVERGED"
+                    if domain_report is not None and domain_report["status"] == "NOT_CONVERGED"
+                    else "DOMAIN_INCONCLUSIVE"
+                    if domain_report is not None and domain_report["status"] == "INCONCLUSIVE_TIMEOUT"
+                    else
                     "TARGET_MET_MESH_CONVERGED"
                     if target_met and mesh_report is not None and mesh_report["status"] == "CONVERGED"
                     else "S11_THRESHOLD_MET_MESH_INCONCLUSIVE"
@@ -454,8 +583,9 @@ def run_design(
                 ),
                 "target_met": target_met,
                 "mesh_convergence": mesh_report["status"] if mesh_report is not None else "NOT_RUN",
+                "domain_convergence": domain_report["status"] if domain_report is not None else "NOT_RUN",
                 "limitations": [
-                    "S11 and port impedance were simulated; mesh convergence is reported separately.",
+                    "S11 and port impedance were simulated; mesh and domain convergence are reported separately.",
                     "Gain, radiation efficiency, pattern, tolerances, and fabrication are not verified.",
                 ],
             }
@@ -473,6 +603,8 @@ def run_design(
                 f"- S11: {center_s11:.2f} dB (target {requirements['target_s11_db']:.2f} dB)\n"
                 f"- Impedance: {summary['z_real_ohm']:.2f} + j{summary['z_imag_ohm']:.2f} ohm\n"
                 f"- Target met: {'yes' if target_met else 'no'}\n\n"
+                f"- Mesh convergence: {summary['mesh_convergence']}\n"
+                f"- Domain convergence: {summary['domain_convergence']}\n\n"
                 f"Mesh convergence: {mesh_report['status'] if mesh_report is not None else 'not run'}. "
                 "Gain, efficiency, pattern, and fabrication are unverified.\n"
             )

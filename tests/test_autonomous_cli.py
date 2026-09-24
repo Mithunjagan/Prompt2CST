@@ -284,6 +284,130 @@ class AutonomousWorkflowTests(unittest.TestCase):
             self.assertEqual(validation["status"], "TARGET_MET_MESH_CONVERGED")
             self.assertEqual(result.artifacts["mesh_convergence"], str(mesh_roots[1] / "mesh_convergence.json"))
 
+    def test_openems_simulate_does_not_claim_success_after_failed_domain_check(self):
+        frequencies = [2.2e9 + i * 1e6 for i in range(501)]
+        initial = {
+            "source": "OPENEMS_FDTD", "frequency_hz": frequencies,
+            "s11_db": [-12.0] * 501, "z_real_ohm": [45.0] * 501,
+            "z_imag_ohm": [5.0] * 501, "best_s11_db": -12.0,
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "project"
+
+            def fake_mesh_check(mesh_root, *, refinement_factor):
+                refined = Path(mesh_root) / "mesh_refined_1.25"
+                generated = write_project(build_project(
+                    "pifa", 2.45e9, mesh_refinement_factor=refinement_factor,
+                ), refined)
+                (refined / "results.json").write_text(json.dumps(initial), encoding="utf-8")
+                return {
+                    "status": "CONVERGED", "real_runs_this_call": 1,
+                    "refined_results": str(refined / "results.json"),
+                    "refined_project_sha256": generated["sha256"],
+                }
+
+            def fake_domain_check(domain_root, *, padding_factor):
+                enlarged = Path(domain_root) / "domain_enlarged_1.25"
+                plan = build_project("pifa", 2.45e9, mesh_refinement_factor=1.25)
+                generated = write_project(plan.model_copy(update={
+                    "simulation_box_mm": tuple(size * padding_factor for size in plan.simulation_box_mm),
+                }), enlarged)
+                lost = {**initial, "s11_db": [-8.0] * 501, "best_s11_db": -8.0}
+                (enlarged / "results.json").write_text(json.dumps(lost), encoding="utf-8")
+                (Path(domain_root) / "domain_convergence.json").write_text("{}", encoding="utf-8")
+                return {
+                    "status": "NOT_CONVERGED", "real_runs_this_call": 1,
+                    "enlarged_results": str(enlarged / "results.json"),
+                    "enlarged_project_sha256": generated["sha256"],
+                }
+
+            with patch(
+                "prompt2cst.autonomous.execute_project",
+                return_value={"result": initial, "results": str(project / "openems" / "results.json")},
+            ), patch(
+                "prompt2cst.autonomous.verify_mesh_convergence", side_effect=fake_mesh_check,
+            ), patch(
+                "prompt2cst.autonomous.verify_domain_convergence", side_effect=fake_domain_check,
+            ) as domain_check:
+                result = run_design(
+                    "Design a 2.45 GHz PIFA with S11 < -10 dB",
+                    project, mode="openems-simulate", max_iterations=3,
+                )
+            domain_check.assert_called_once()
+            self.assertEqual(result.simulation_count, 3)
+            validation = json.loads(Path(result.artifacts["validation"]).read_text(encoding="utf-8"))
+            self.assertEqual(validation["status"], "DOMAIN_NOT_CONVERGED")
+            self.assertFalse(validation["target_met"])
+            self.assertEqual(validation["domain_convergence"], "NOT_CONVERGED")
+
+    def test_openems_simulate_recovers_match_lost_on_refined_mesh(self):
+        frequencies = [2.2e9 + i * 1e6 for i in range(501)]
+        base = {
+            "source": "OPENEMS_FDTD", "frequency_hz": frequencies,
+            "z_real_ohm": [50.0] * 501, "z_imag_ohm": [0.0] * 501,
+        }
+        initial = {**base, "s11_db": [-12.0] * 501, "best_s11_db": -12.0}
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "project"
+            mesh_runs = []
+
+            def fake_mesh_check(mesh_root, *, refinement_factor):
+                mesh_root = Path(mesh_root)
+                mesh_runs.append(mesh_root)
+                plan = json.loads((mesh_root / "openems_plan.json").read_text(encoding="utf-8"))
+                refined = mesh_root / "mesh_refined_1.25"
+                generated = write_project(build_project(
+                    "pifa", 2.45e9,
+                    mesh_refinement_factor=plan["mesh_refinement_factor"] * refinement_factor,
+                ), refined)
+                s11 = -9.0 if len(mesh_runs) == 1 else -12.5
+                (refined / "results.json").write_text(json.dumps({
+                    **base, "s11_db": [s11] * 501, "best_s11_db": s11,
+                }), encoding="utf-8")
+                return {
+                    "status": "CONVERGED", "real_runs_this_call": 1,
+                    "refined_results": str(refined / "results.json"),
+                    "refined_project_sha256": generated["sha256"],
+                }
+
+            def fake_recovery(_frequency_hz, recovery_dir, **kwargs):
+                self.assertAlmostEqual(kwargs["mesh_refinement_factor"], 1.25)
+                candidate = Path(recovery_dir) / "candidate"
+                generated = write_project(build_project(
+                    "pifa", 2.45e9, mesh_refinement_factor=1.25,
+                    pifa_length_scale=1.02,
+                ), candidate)
+                (candidate / "results.json").write_text(json.dumps({
+                    **base, "s11_db": [-13.0] * 501, "best_s11_db": -13.0,
+                }), encoding="utf-8")
+                return {
+                    "real_runs_this_call": 1,
+                    "best": {
+                        "meets_target": True,
+                        "results": str(candidate / "results.json"),
+                        "project_sha256": generated["sha256"],
+                    },
+                }
+
+            with patch(
+                "prompt2cst.autonomous.execute_project",
+                return_value={"result": initial, "results": str(project / "openems" / "results.json")},
+            ), patch(
+                "prompt2cst.autonomous.verify_mesh_convergence", side_effect=fake_mesh_check,
+            ), patch(
+                "prompt2cst.autonomous.search_pifa", side_effect=fake_recovery,
+            ) as recovery:
+                result = run_design(
+                    "Design a 2.45 GHz PIFA with S11 < -10 dB",
+                    project, mode="openems-simulate", max_iterations=4,
+                )
+            recovery.assert_called_once()
+            self.assertEqual(len(mesh_runs), 2)
+            self.assertEqual(result.simulation_count, 4)
+            validation = json.loads(Path(result.artifacts["validation"]).read_text(encoding="utf-8"))
+            self.assertEqual(validation["status"], "TARGET_MET_MESH_CONVERGED")
+            self.assertTrue(validation["target_met"])
+
     def test_openems_simulate_reports_lost_target_and_nonconverged_mesh(self):
         frequencies = [2.2e9 + i * 1e6 for i in range(501)]
         initial = {

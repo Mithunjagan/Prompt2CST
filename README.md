@@ -18,7 +18,7 @@
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.5.0b1-6c63ff" alt="Version 0.5.0 beta 1"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.11-3776ab?logo=python&amp;logoColor=white" alt="Python 3.11"></a>
   <a href="#platform-support"><img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?logo=windows" alt="Windows 10 and 11"></a>
-  <a href="#verification"><img src="https://img.shields.io/badge/tests-196%20passing-22c55e" alt="196 tests passing"></a>
+  <a href="#verification"><img src="https://img.shields.io/badge/tests-200%20passing-22c55e" alt="200 tests passing"></a>
 </p>
 
 <p align="center">
@@ -39,9 +39,16 @@
   <sub>Qt Quick desktop workspace at 125% Windows scaling. API key intentionally hidden.</sub>
 </p>
 
-Prompt2CST is an autonomous zero-cost RF electromagnetic design, CST modeling, simulation, and impedance-matching optimization system.
+Prompt2CST is a local-first RF design workspace with a free openEMS simulation
+path and an optional, separately licensed CST modeling path. Its current
+autonomy is bounded by supported antenna families and explicit verification
+gates; it is not yet an "any antenna" machine.
 
-It turns natural-language intent and paper evidence into typed, reviewable CST Studio Suite 2026 geometry, staged optimization plans, parameter sensitivity analysis, and wearable head-loading SAR reports—with an absolute cost constraint of **$0 / ₹0** (no paid APIs, SaaS, hosted vector DBs, or paid SaaS required).
+It turns natural-language intent and paper evidence into typed, reviewable
+geometry, staged optimization plans, parameter sensitivity analysis, and
+wearable head-loading SAR reports. The **openEMS/local mode** needs no paid API,
+hosted service, or CST license; a CST installation and physical fabrication
+remain separate costs if those paths are used.
 
 | 🧠 Intent becomes engineering | 🛡️ Zero-Cost Guarantee ($0 / ₹0) | ⚡ Autonomous CST Optimization |
 |---|---|---|
@@ -51,7 +58,7 @@ It turns natural-language intent and paper evidence into typed, reviewable CST S
   <strong>25 typed tools</strong> ·
   <strong>6 protected write tools</strong> ·
   <strong>10 antenna topologies</strong> ·
-  <strong>196 unit tests</strong> ·
+  <strong>200 unit tests</strong> ·
   <strong>$0 API cost verified</strong>
 </p>
 
@@ -202,13 +209,11 @@ added only when each one passes the same validation standard.
 
 ## What it cannot do
 
-The current beta intentionally does not provide:
+The CST preview/build path in this beta does not provide:
 
-- solver execution;
-- S-parameter, VSWR, impedance, gain, efficiency, or radiation-pattern
-  extraction;
-- automatic electromagnetic validation;
-- automatic launch of optimization or parameter sweeps;
+- automatic CST solver execution or CST S-parameter/gain extraction from the
+  preview-and-approval workflow;
+- automatic CST electromagnetic validation or CST optimization launch;
 - a verified live-CST local mesh-refinement compiler;
 - a Learning Edition 100k-cell guarantee;
 - waveguide ports;
@@ -216,6 +221,11 @@ The current beta intentionally does not provide:
 - verified compilation for curves, helices, toroids, polygon extrusion,
   circular arrays, imported geometry, or general VBA/Python execution;
 - cloud project storage.
+
+Separately, the free openEMS path does run FDTD and extract S11/impedance;
+optional NF2FF runs extract gain and efficiency. It does **not** yet deliver
+autonomous post-refinement retuning, validated radiation patterns, tolerance
+yield, or measured build performance for arbitrary prompted antennas.
 
 Designs are not rejected merely because they lack a catalog family. If a
 DesignIR requires an unavailable compiler capability, validation names that
@@ -470,6 +480,12 @@ A completed far-field run extracts directivity, radiation efficiency, and
 realized gain from openEMS NF2FF output; these values are not available from
 the faster port-only runs.
 
+For a separate air-domain sensitivity check, run
+`python -m prompt2cst openems-verify-domain PROJECT_DIR`. It enlarges the
+solver box while holding the effective mesh cap fixed, then reports the S11
+and impedance differences. Passing a domain check does not by itself mean the
+antenna meets its target or that its far-field pattern is validated.
+
 The same path is available through \`design ... --mode openems\` and the
 desktop **Generate openEMS · Free local solver** action. Generation never
 pretends a simulation ran. Real S11 and impedance require compatible openEMS
@@ -485,6 +501,11 @@ is reached. Its report separately marks the S11 target and mesh convergence;
 an unmet convergence test is never presented as a verified design. If a finer
 mesh times out, the last completed result is retained and its mesh status is
 marked inconclusive.
+When a matched, mesh-converged run has remaining budget, the prompt workflow
+also tests a larger air domain and reports that status separately. A lost
+match after mesh refinement triggers a bounded PIFA retune at the finer mesh;
+the retuned candidate must pass a new mesh check. Recovery after a failed
+domain check and far-field convergence are still unfinished.
 Set `PROMPT2CST_OUTPUT_DIR` before launching the desktop app to place its
 projects and solver files on a drive with enough free space.
 

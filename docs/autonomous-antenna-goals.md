@@ -22,7 +22,9 @@ pilot evidence, and a repeatable test command. **Stop when:** the complete
 offline suite, compilation, package/dependency checks, and UI lint pass; the
 pilot report identifies which numbers came from actual openEMS output and
 which checks remain outstanding. **Current state:** partially complete; the
-868 MHz pilot exists, but its domain and far-field are not converged.
+868 MHz pilot exists, but its matched geometry has not passed the larger-box
+domain, mesh, and far-field checks together. A later unmatched 868 MHz run
+passed a controlled port-domain comparison; that is progress, not completion.
 
 ## Goal 1 — Make one PIFA solve numerically credible
 
@@ -46,7 +48,9 @@ untuned default at 868 and 915 MHz and reach a passing Goal 1 candidate
 without a person choosing new dimensions; tests also cover timeout, restart,
 budget exhaustion, and an initially matched candidate that fails refinement.
 The existing coarse PIFA search is a starting point, not completion of this
-goal.
+goal. **Current state:** automatic post-mesh retuning is implemented and
+offline-tested; a real 868 MHz refined-mesh retune found a matched candidate,
+but its next mesh check failed. The end-to-end gate is therefore still open.
 
 ## Goal 3 — Produce a buildable *proposal*, not a fake certificate
 

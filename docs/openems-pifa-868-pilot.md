@@ -28,6 +28,43 @@ At 1.8× mesh with NF2FF recording, the solver reported S11 −14.21 dB, directi
 
 The backend now preserves `solver.log` on timeout/failure, rejects a run without −40 dB energy decay or a fresh result file, and includes a solver-recipe version in the plan hash. A wider Gaussian excitation and a less wasteful air-box mesh made the sub-GHz run practical; the requested frequency samples remain separate from excitation width. The matching workflow still requires mesh checks after tuning. These choices follow the [openEMS Python patch tutorial](https://docs.openems.de/en/latest/python/openEMS/Tutorials/Simple_Patch_Antenna.html) and [mesh guidance](https://docs.openems.de/en/latest/concepts/mesh.html); the [NF2FF documentation](https://docs.openems.de/en/latest/concepts/nf2ff.html) describes the far-field quantities.
 
+## Follow-up air-domain check (2026-09-24)
+
+The PIFA generator now places the PML at least one quarter-wavelength from
+the geometry at the lowest sweep frequency. The earlier tuned dimensions,
+rerun in this larger box at 1.5× mesh, yielded **S11 −4.99 dB at 868 MHz**;
+their best sampled dip moved to 858.28 MHz. Thus the old matched geometry is
+**not** accepted as a validated 868 MHz design. This new solver result is saved
+under `D:\Prompt2CST-LocalAI\real-em\pifa-868-domain-qw-20260924\`.
+
+The first box-enlargement attempt inadvertently changed the mesh step as well
+as the boundary distance, so its apparent 2.65 dB difference was not a clean
+domain test. The checker now fixes the effective maximum mesh step. With that
+correction, another 25% increase in air padding changed S11 only **0.094 dB**
+and impedance **0.41 Ω**, passing the configured port-domain thresholds.
+The same quarter-wavelength box, compared at 1.5× and 1.875× mesh, changed
+S11 by **0.43 dB** and impedance by **1.97 Ω**; that port-level mesh check
+also passed. Both checks concern an **unmatched** geometry (refined S11
+−5.43 dB at 868 MHz). Retuning, far-field convergence, and physical
+construction remain open gates. See `mesh_convergence.json` and
+`domain_convergence.json` alongside the saved solver inputs and logs.
+
+A bounded real-FDTD retune in the same quarter-wavelength box found length
+scale 1.4 and feed fraction 0.10, with S11 **−10.44 dB** at 868 MHz on the
+1.5× mesh. Its 1.875× mesh result was **−9.64 dB**: the port comparison
+itself converged (ΔS11 0.80 dB, ΔZ 4.96 Ω), but the requested match was
+lost. The search and check are saved under
+`D:\Prompt2CST-LocalAI\real-em\pifa-868-domain-search-v1\`. A refined-mesh
+retune is therefore required; the 1.4 candidate is **not accepted**.
+
+At 1.875× mesh, a resonance-guided real-solver retune increased length scale
+to **1.4078** and reached S11 **−16.97 dB** at 868 MHz. But its 2.344× mesh
+check returned **−9.56 dB**, changing by **7.40 dB** and **46.56 Ω**. That
+comparison is **not converged**, and the apparent match is again rejected.
+The two-stage retune and failing check are saved under
+`D:\Prompt2CST-LocalAI\real-em\pifa-868-refined-search-v1\`. These results
+show why the final gate cannot be defined as "one solver run below −10 dB."
+
 ## Remaining gates before a build claim
 
 1. Repeat far-field at another mesh density and compare gain, efficiency, and pattern.
