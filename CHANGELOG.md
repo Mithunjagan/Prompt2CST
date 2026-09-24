@@ -4,6 +4,10 @@ All notable Prompt2CST changes are documented here.
 
 ## Unreleased
 
+- Clarified that hosted-model/OpenRouter access is optional for free local
+  simulation, documented the official Windows openEMS/CSXCAD wheel setup for
+  Python 3.11, and made setup report local-solver readiness separately.
+
 - A real 868 MHz v4 PIFA candidate passed adjacent-mesh S11/impedance
   convergence and a controlled 25%-larger-air-domain comparison at 868 MHz.
   Far-field, 915 MHz, tolerance and physical tests remain unverified.

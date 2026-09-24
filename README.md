@@ -171,8 +171,10 @@ prototype.
 
 This is a delivery target, **not a claim that it is already complete**. The
 current openEMS path generates five families and can run real FDTD simulations;
-the 868 MHz PIFA pilot still needed manual retuning, has no domain-size or
-far-field convergence result, and has not been fabricated. See the
+one manually inspected 868 MHz PIFA candidate now passes adjacent-mesh and
+larger-air-domain **port** comparisons. The single-prompt end-to-end run,
+915 MHz case, far-field convergence and physical prototype remain unverified.
+See the
 [dedicated goals and stop gates](docs/autonomous-antenna-goals.md) and the
 [pilot evidence](docs/openems-pifa-868-pilot.md). Families beyond PIFA are
 added only when each one passes the same validation standard.
@@ -257,10 +259,10 @@ repository’s local `outputs` directory.
 |---|---|
 | Operating system | Windows 10 or Windows 11, 64-bit |
 | Python | CPython 3.11 x64; Python 3.12+ is not accepted by this release |
-| Internet | Required during dependency installation and for OpenRouter requests |
-| OpenRouter account | Required for an API key and model access |
-| Structured/tool model | Planning roles should support structured JSON output; legacy MCP use also needs tool/function calling |
-| Disk space | Allow approximately 1 GB; the current development `.venv` is about 713 MB |
+| Internet | Required during dependency installation; not required by an installed local openEMS workflow |
+| OpenRouter account | Optional for hosted-model planning; not required for local openEMS design/simulation |
+| Structured/tool model | Optional hosted planning roles should support structured JSON; the local solver path does not need one |
+| Disk space | Allow approximately 1 GB for the app, at least 2 GB free for port simulation or 8 GB for far-field recording |
 | PowerShell | Windows PowerShell 5.1 or PowerShell 7 |
 
 ### Additionally required for CST builds
@@ -274,6 +276,37 @@ repository’s local `outputs` directory.
 
 You can launch the UI and run previews without CST. Build tools remain
 unavailable until CST 2026 is installed and registered.
+
+### Free local openEMS solver setup
+
+`setup.bat` installs the app, **not** the native openEMS solver. For real
+no-API-cost simulations, download a 64-bit Windows package from the
+[official openEMS releases](https://github.com/thliebig/openEMS-Project/releases)
+and follow the [official Windows Python-interface instructions](https://docs.openems.de/en/latest/python/manual_install.html#windows).
+Choose a package with **CPython 3.11 (`cp311`)** wheels for both openEMS and
+CSXCAD; a wheel for another Python version will not install in this app's
+`.venv`. The locally tested package was openEMS 0.0.36 with `cp311` wheels.
+After extracting the package, run the following in the repository root,
+replacing `C:\openEMS` with the extracted folder that contains `openEMS.exe`:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install numpy h5py matplotlib
+.\.venv\Scripts\python.exe -m pip install --no-index --find-links C:\openEMS\python openEMS
+[Environment]::SetEnvironmentVariable("CSXCAD_INSTALL_PATH", "C:\openEMS", "User")
+[Environment]::SetEnvironmentVariable("OPENEMS_INSTALL_PATH", "C:\openEMS", "User")
+```
+
+Open a **new** PowerShell window, then verify both bindings and the backend:
+
+```powershell
+.\.venv\Scripts\python.exe -c "import CSXCAD, openEMS; print(openEMS.openEMS())"
+.\.venv\Scripts\python.exe -c "from prompt2cst.openems_backend import backend_status; print(backend_status())"
+```
+
+The second command must report `READY` before `openems-simulate` can run.
+openEMS's Windows package can have version-specific performance issues, so
+solver completion and convergence—not installation alone—determine whether
+an antenna result is accepted.
 
 Useful official starting points:
 
@@ -506,6 +539,11 @@ also tests a larger air domain and reports that status separately. A lost
 match after mesh refinement triggers a bounded PIFA retune at the finer mesh;
 the retuned candidate must pass a new mesh check. Recovery after a failed
 domain check and far-field convergence are still unfinished.
+Simulated PIFA runs now also write an exact-plan-hash geometry proposal under
+`final/fabrication/`: millimetre top/side SVG views, dimensions, a proposed
+BOM and explicitly unverified tolerances. The ideal PEC sheets and lumped
+port are **not** a physical connector, material stack-up or manufacturing-ready
+drawing.
 Set `PROMPT2CST_OUTPUT_DIR` before launching the desktop app to place its
 projects and solver files on a drive with enough free space.
 

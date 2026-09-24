@@ -149,6 +149,15 @@ else {
     Write-Warning "CSTStudio.Application.2026 was not found. The UI can run, but CST builds will not work until CST 2026 is installed and registered."
 }
 
+$solverStatus = & $venvPython -c `
+    "from prompt2cst.openems_backend import backend_status; print(backend_status()['status'])"
+if ($LASTEXITCODE -eq 0 -and $solverStatus.Trim() -eq "READY") {
+    Write-Host "Free local openEMS solver is ready." -ForegroundColor Green
+}
+else {
+    Write-Warning "Free local openEMS solver is not ready. Install compatible openEMS/CSXCAD wheels and native binaries using the README instructions."
+}
+
 New-Item -ItemType Directory -Force `
     (Join-Path $projectRoot "outputs") | Out-Null
 
@@ -167,4 +176,4 @@ if ($CreateDesktopShortcut) {
 Write-Host ""
 Write-Host "Setup complete." -ForegroundColor Green
 Write-Host "Double-click Prompt2CST.bat to launch."
-Write-Host "Your OpenRouter API key is entered in the app and is not saved."
+Write-Host "OpenRouter is optional; the free local solver needs separate openEMS/CSXCAD installation (see README)."
