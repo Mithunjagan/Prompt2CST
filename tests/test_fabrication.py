@@ -31,6 +31,11 @@ class PIFAFabricationTests(unittest.TestCase):
                 self.assertIn("mm", drawing.read_text(encoding="utf-8"))
                 self.assertEqual(ElementTree.parse(drawing).getroot().tag,
                                  "{http://www.w3.org/2000/svg}svg")
+            first_bytes = {key: Path(path).read_bytes() for key, path in artifacts.items()}
+            regenerated = write_pifa_fabrication_proposal(project, temp)
+            self.assertEqual(first_bytes, {
+                key: Path(path).read_bytes() for key, path in regenerated.items()
+            })
 
     def test_rejects_feed_outside_radiator_footprint(self):
         project = build_project("pifa", 868e6)

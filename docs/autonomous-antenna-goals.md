@@ -51,8 +51,10 @@ without a person choosing new dimensions; tests also cover timeout, restart,
 budget exhaustion, and an initially matched candidate that fails refinement.
 The existing coarse PIFA search is a starting point, not completion of this
 goal. **Current state:** automatic post-mesh retuning is implemented and
-offline-tested; a real 868 MHz refined-mesh retune found a matched candidate,
-but its next mesh check failed. The end-to-end gate is therefore still open.
+offline-tested. A fresh 868 MHz one-prompt run automatically found a matched
+candidate and passed its port mesh/domain comparisons in five real solves.
+The 915 MHz case, domain-failure recovery, interruption/resume and broader
+acceptance gate are still open.
 
 ## Goal 3 — Produce a buildable *proposal*, not a fake certificate
 

@@ -7,7 +7,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from prompt2cst.autonomous import extract_requirements, project_status, run_design
+from prompt2cst.autonomous import (
+    classify_port_verdict, extract_requirements, project_status, run_design,
+)
 from prompt2cst.cli import create_parser
 from prompt2cst.local_ai import LocalAIResult
 from prompt2cst.openems_backend import build_project, write_project
@@ -15,6 +17,20 @@ from prompt2cst.papers import PaperIngestionEngine
 
 
 class AutonomousWorkflowTests(unittest.TestCase):
+    def test_port_verdict_never_confuses_an_unchecked_candidate_with_a_pass(self):
+        self.assertEqual(classify_port_verdict(
+            target_met=True, mesh_status="CONVERGED", domain_status="CONVERGED"
+        ), "PASS")
+        self.assertEqual(classify_port_verdict(
+            target_met=True, mesh_status="CONVERGED", domain_status="NOT_RUN"
+        ), "INCONCLUSIVE")
+        self.assertEqual(classify_port_verdict(
+            target_met=True, mesh_status="CONVERGED", domain_status="NOT_CONVERGED"
+        ), "FAIL")
+        self.assertEqual(classify_port_verdict(
+            target_met=False, mesh_status="CONVERGED", domain_status="CONVERGED"
+        ), "FAIL")
+
     def test_local_ai_flag_is_explicit_opt_in(self):
         parser = create_parser()
         self.assertFalse(parser.parse_args(["design", "Build a PIFA"]).local_ai)
@@ -167,6 +183,7 @@ class AutonomousWorkflowTests(unittest.TestCase):
             self.assertEqual(result.simulation_count, 1)
             validation = json.loads(Path(result.artifacts["validation"]).read_text(encoding="utf-8"))
             self.assertEqual(validation["status"], "TARGET_UNMET")
+            self.assertEqual(validation["port_verdict"], "FAIL")
             self.assertTrue(validation["simulation_performed"])
             self.assertIn("Target met: no", (project / "final" / "final_report.md").read_text(encoding="utf-8"))
             proposal = json.loads(Path(result.artifacts["fabrication_proposal"]).read_text(encoding="utf-8"))
@@ -238,6 +255,7 @@ class AutonomousWorkflowTests(unittest.TestCase):
             self.assertEqual(measured["s11_db"], -12.0)
             validation = json.loads(Path(result.artifacts["validation"]).read_text(encoding="utf-8"))
             self.assertEqual(validation["status"], "TARGET_MET_MESH_CONVERGED")
+            self.assertEqual(validation["port_verdict"], "INCONCLUSIVE")
 
     def test_openems_simulate_retries_nonconverged_mesh_within_budget(self):
         frequencies = [2.2e9 + i * 1e6 for i in range(501)]
@@ -341,6 +359,7 @@ class AutonomousWorkflowTests(unittest.TestCase):
             self.assertEqual(result.simulation_count, 3)
             validation = json.loads(Path(result.artifacts["validation"]).read_text(encoding="utf-8"))
             self.assertEqual(validation["status"], "DOMAIN_NOT_CONVERGED")
+            self.assertEqual(validation["port_verdict"], "FAIL")
             self.assertFalse(validation["target_met"])
             self.assertEqual(validation["domain_convergence"], "NOT_CONVERGED")
 

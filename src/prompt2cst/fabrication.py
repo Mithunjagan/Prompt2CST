@@ -68,16 +68,16 @@ def write_pifa_fabrication_proposal(
         f'{top_rect(short, "#555e6b", 0.95)}\n'
         f'<circle cx="{tx(project.port.start[0]):.4f}" '
         f'cy="{ty(project.port.start[1]):.4f}" r="1.2" fill="#c92335"/>\n'
-        f'<text x="{padding:.4f}" y="{height-19:.4f}" font-size="2.5">'
+        f'<text x="{padding:.4f}" y="{height-19:.4f}" font-size="2.5" fill="#111" font-family="Arial">'
         f'Ground {dimensions["ground_length_mm"]:.2f} x '
         f'{dimensions["ground_width_mm"]:.2f} mm</text>\n'
-        f'<text x="{padding:.4f}" y="{height-14:.4f}" font-size="2.5">'
+        f'<text x="{padding:.4f}" y="{height-14:.4f}" font-size="2.5" fill="#111" font-family="Arial">'
         f'Radiator {dimensions["radiator_length_mm"]:.2f} x '
         f'{dimensions["radiator_width_mm"]:.2f} mm</text>\n'
-        f'<text x="{padding:.4f}" y="{height-9:.4f}" font-size="2.5">'
+        f'<text x="{padding:.4f}" y="{height-9:.4f}" font-size="2.5" fill="#111" font-family="Arial">'
         f'Feed {dimensions["feed_distance_from_short_edge_mm"]:.2f} mm '
         'from short edge; red dot marks location.</text>\n'
-        f'<text x="{padding:.4f}" y="{height-4:.4f}" font-size="2.5">'
+        f'<text x="{padding:.4f}" y="{height-4:.4f}" font-size="2.5" fill="#111" font-family="Arial">'
         'XY datum: ground centre. Ideal PEC; not a cut file.</text>\n'
         '</svg>\n',
         encoding="utf-8",
@@ -102,9 +102,9 @@ def write_pifa_fabrication_proposal(
         f'<line x1="{tx(project.port.start[0]):.4f}" y1="{z_ground:.4f}" '
         f'x2="{tx(project.port.start[0]):.4f}" y2="{z_radiator:.4f}" '
         'stroke="#c92335" stroke-width="0.55" stroke-dasharray="1,1"/>\n'
-        f'<text x="{padding:.4f}" y="{side_height-9:.4f}" font-size="2.5">'
+        f'<text x="{padding:.4f}" y="{side_height-9:.4f}" font-size="2.5" fill="#111" font-family="Arial">'
         f'XZ at y=0; ground z=0; radiator z={dimensions["radiator_height_mm"]:.2f} mm.</text>\n'
-        f'<text x="{padding:.4f}" y="{side_height-4:.4f}" font-size="2.5">'
+        f'<text x="{padding:.4f}" y="{side_height-4:.4f}" font-size="2.5" fill="#111" font-family="Arial">'
         'Dashed feed is an ideal 50 ohm lumped port, not a connector.</text>\n'
         '</svg>\n',
         encoding="utf-8",

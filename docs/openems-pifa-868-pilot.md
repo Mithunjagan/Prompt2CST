@@ -97,8 +97,29 @@ comparison passed: S11 −13.170→−13.159 dB at 868 MHz, ΔS11 0.011 dB and
 candidate's 2.930× `results.json`. This is now a matched, adjacent-mesh- and
 air-domain-converged **port result** at 868 MHz; it does not establish
 far-field gain, efficiency, pattern, fabrication tolerance or measured
-hardware performance. The full prompt-to-report workflow and 915 MHz case
-also remain to be demonstrated.
+hardware performance. The 915 MHz case remains to be demonstrated.
+
+## First autonomous 868 MHz prompt acceptance
+
+The independent, fresh project under
+`D:\Prompt2CST-LocalAI\acceptance\pifa-868-prompt-v4\` started from the
+single request “Design a practical 868 MHz PIFA antenna with S11 below −10 dB”
+in `openems-simulate` mode, with a 15-run cap. The pipeline ran five real
+openEMS solves: initial geometry, two automatically chosen length-search
+candidates, a finer mesh, and a 25%-larger air domain. No person supplied the
+winning length or feed offset. The winner was length scale 1.4375,
+feed fraction 0.10, with plan SHA-256
+`01723dd8bb15283578e18814b4733229c0281222364ebe2c295e4e4e764111b3`.
+
+The final 868 MHz port result was S11 **−12.54 dB** and input impedance
+**72.90 − j18.32 Ω**. The 1.5×→1.875× mesh comparison passed (ΔS11 0.209 dB,
+ΔZ 7.27 Ω); the 25%-larger-domain comparison at the finer mesh also passed
+(ΔS11 0.112 dB, ΔZ 1.44 Ω). Saved artifacts include validated `results.json`,
+both convergence reports, `final/final_report.md`, and a plan-linked
+`final/fabrication/` proposal. The proposal explicitly leaves copper
+thickness, connector, supports, dimensional sensitivity and physical
+measurement unresolved. This is a **simulation-only port acceptance**;
+far-field and prototype performance remain unknown.
 
 ## Remaining gates before a build claim
 

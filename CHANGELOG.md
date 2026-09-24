@@ -4,6 +4,14 @@ All notable Prompt2CST changes are documented here.
 
 ## Unreleased
 
+- A fresh, single-prompt 868 MHz PIFA run automatically selected its length,
+  ran five real openEMS solves, and passed the -10 dB S11, adjacent-mesh and
+  enlarged-air-domain port checks. This is not far-field or hardware proof.
+
+- Added an explicit PASS/FAIL/INCONCLUSIVE verdict scoped to simulated PIFA
+  port checks; an unmet S11 target or failed mesh/domain comparison cannot be
+  reported as a pass, and unchecked comparisons remain inconclusive.
+
 - Clarified that hosted-model/OpenRouter access is optional for free local
   simulation, documented the official Windows openEMS/CSXCAD wheel setup for
   Python 3.11, and made setup report local-solver readiness separately.

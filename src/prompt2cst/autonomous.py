@@ -60,6 +60,17 @@ _FREQ_RE = re.compile(
 _S11_RE = re.compile(r"s\s*11\s*(?:<|≤|less than)?\s*[−-]?\s*(\d+(?:\.\d+)?)\s*db", re.I)
 
 
+def classify_port_verdict(
+    *, target_met: bool, mesh_status: str, domain_status: str
+) -> str:
+    """Classify only simulated port checks; never imply a build certificate."""
+    if not target_met or "NOT_CONVERGED" in (mesh_status, domain_status):
+        return "FAIL"
+    if mesh_status == domain_status == "CONVERGED":
+        return "PASS"
+    return "INCONCLUSIVE"
+
+
 @dataclass(frozen=True)
 class DesignRun:
     project_dir: Path
@@ -534,6 +545,11 @@ def run_design(
                 "mesh_convergence": mesh_report["status"] if mesh_report is not None else "NOT_RUN",
                 "domain_convergence": domain_report["status"] if domain_report is not None else "NOT_RUN",
             }
+            summary["port_verdict"] = classify_port_verdict(
+                target_met=target_met,
+                mesh_status=summary["mesh_convergence"],
+                domain_status=summary["domain_convergence"],
+            )
             if topology == "pifa":
                 selected_plan_path = artifacts.get("optimized_openems_plan", artifacts["openems_plan"])
                 selected_plan = OpenEMSProject.model_validate_json(
@@ -590,6 +606,8 @@ def run_design(
                     if target_met else "TARGET_UNMET"
                 ),
                 "target_met": target_met,
+                "port_verdict": summary["port_verdict"],
+                "port_verdict_scope": "simulated S11, impedance, mesh and air-domain checks only",
                 "mesh_convergence": mesh_report["status"] if mesh_report is not None else "NOT_RUN",
                 "domain_convergence": domain_report["status"] if domain_report is not None else "NOT_RUN",
                 "limitations": [
@@ -612,6 +630,8 @@ def run_design(
                 f"- S11: {center_s11:.2f} dB (target {requirements['target_s11_db']:.2f} dB)\n"
                 f"- Impedance: {summary['z_real_ohm']:.2f} + j{summary['z_imag_ohm']:.2f} ohm\n"
                 f"- Target met: {'yes' if target_met else 'no'}\n\n"
+                f"- Simulated port verdict: **{summary['port_verdict']}** "
+                "(S11, impedance, mesh and air-domain checks only)\n"
                 f"- Mesh convergence: {summary['mesh_convergence']}\n"
                 f"- Domain convergence: {summary['domain_convergence']}\n\n"
                 f"Mesh convergence: {mesh_report['status'] if mesh_report is not None else 'not run'}. "
