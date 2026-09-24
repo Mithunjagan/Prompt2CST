@@ -4,6 +4,17 @@ All notable Prompt2CST changes are documented here.
 
 ## Unreleased
 
+- Added a PIFA-only fabrication *proposal* to simulated runs: exact-plan-hash
+  geometry dimensions, millimetre top/side SVG views, a BOM and explicit
+  material/feed/tolerance unknowns. It is not a manufacturing-ready drawing
+  or measured-performance certificate.
+
+- Began a versioned PIFA conductor-edge mesh experiment following openEMS's
+  1/3-metal, 2/3-air guidance. Recipe v3 was rejected after an unintended
+  tiny cell prevented solver-energy convergence; v4 removes that cell and
+  remains under real-solver mesh/domain validation. No antenna-performance
+  claim is made from the experimental recipe.
+
 - Defined separate, testable stop gates for a standalone 868/915 MHz PIFA
   milestone. Added quarter-wavelength PIFA air padding, a controlled
   air-domain convergence check, and bounded automatic recovery when mesh

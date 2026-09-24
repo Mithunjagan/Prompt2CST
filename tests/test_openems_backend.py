@@ -33,7 +33,7 @@ class OpenEMSBackendTests(unittest.TestCase):
                 project = build_project(family, 2.45e9)
                 self.assertGreater(len(project.primitives), 1)
                 self.assertEqual(len(project.canonical_sha256), 64)
-                self.assertEqual(project.solver_recipe_version, "openems-fdtd-v2")
+                self.assertEqual(project.solver_recipe_version, "openems-fdtd-v4")
                 self.assertTrue(project.verification_required)
                 self.assertTrue(project.source_urls)
 
@@ -90,6 +90,7 @@ class OpenEMSBackendTests(unittest.TestCase):
         self.assertIn("F0 / 2", script)
         self.assertIn("NrTS=30000", script)
         self.assertIn("sx/20, sy/20, sz/20", script)
+        self.assertIn("lo - 2*highres/3, lo + highres/3", script)
         compile(script, "run_openems.py", "exec")
 
     def test_write_project_is_deterministic_and_inspectable(self) -> None:

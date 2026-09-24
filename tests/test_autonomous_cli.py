@@ -169,6 +169,10 @@ class AutonomousWorkflowTests(unittest.TestCase):
             self.assertEqual(validation["status"], "TARGET_UNMET")
             self.assertTrue(validation["simulation_performed"])
             self.assertIn("Target met: no", (project / "final" / "final_report.md").read_text(encoding="utf-8"))
+            proposal = json.loads(Path(result.artifacts["fabrication_proposal"]).read_text(encoding="utf-8"))
+            self.assertEqual(proposal["status"], "GEOMETRY_PROPOSAL_NOT_FABRICATION_VALIDATED")
+            self.assertIn(proposal["project_sha256"], (project / "final" / "final_report.md").read_text(encoding="utf-8"))
+            self.assertTrue(Path(result.artifacts["fabrication_top_view"]).is_file())
 
     def test_openems_simulate_uses_better_real_pifa_search_result(self):
         frequencies = [2.2e9 + i * 1e6 for i in range(501)]

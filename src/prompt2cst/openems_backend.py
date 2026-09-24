@@ -85,7 +85,9 @@ class Port(_StrictModel):
 
 class OpenEMSProject(_StrictModel):
     schema_version: Literal["openems-plan-1.0"] = "openems-plan-1.0"
-    solver_recipe_version: Literal["openems-fdtd-v2"] = "openems-fdtd-v2"
+    solver_recipe_version: Literal[
+        "openems-fdtd-v2", "openems-fdtd-v3", "openems-fdtd-v4"
+    ] = "openems-fdtd-v4"
     family: Literal["pifa", "helix", "yagi_uda", "horn", "vivaldi"]
     frequency_min_hz: float = Field(gt=0)
     frequency_max_hz: float = Field(gt=0)
@@ -880,14 +882,39 @@ grid.SetLines("x", [-sx/2, sx/2])
 grid.SetLines("y", [-sy/2, sy/2])
 grid.SetLines("z", [-sz/2, sz/2])
 
-# Force every solid and port boundary onto the Yee grid. Without these lines,
-# sub-cell sheets and feeds can disappear and produce a zero-energy run.
+# Zero-thickness metal planes and lumped ports must align with Yee lines.
+# Around the broad PIFA conductor edges, intentionally offset x/y lines to
+# follow the 1/3-metal, 2/3-air rule from the openEMS mesh guide. The 1 mm
+# short-wall x limits stay exact to keep that narrow connection resolved.
 axis_names = ("x", "y", "z")
 edge_lines = {{"x": [], "y": [], "z": []}}
 for primitive in PLAN["primitives"]:
     if primitive["kind"] in ("box", "cylinder"):
         for axis, lo, hi in zip(axis_names, primitive["start"], primitive["stop"]):
-            edge_lines[axis].extend((lo, hi))
+            pifa_edge = (
+                PLAN["family"] == "pifa"
+                and PLAN["solver_recipe_version"] in ("openems-fdtd-v3", "openems-fdtd-v4")
+                and axis in ("x", "y")
+                and (primitive["name"] in ("ground", "radiator")
+                     or (primitive["name"] == "short" and axis == "y"))
+            )
+            if pifa_edge:
+                highres = min(step / 1.5, (hi - lo) / 8)
+                if (PLAN["solver_recipe_version"] == "openems-fdtd-v4"
+                        and primitive["name"] == "radiator" and axis == "x"):
+                    # The short wall starts exactly at this x limit. An
+                    # offset here plus the exact short-wall line creates a
+                    # tiny Yee cell and an impractically short FDTD timestep.
+                    edge_lines[axis].extend((
+                        lo, hi - highres/3, hi + 2*highres/3,
+                    ))
+                else:
+                    edge_lines[axis].extend((
+                        lo - 2*highres/3, lo + highres/3,
+                        hi - highres/3, hi + 2*highres/3,
+                    ))
+            else:
+                edge_lines[axis].extend((lo, hi))
     if primitive["kind"] == "cylinder":
         radius = primitive["radius_mm"]
         for index, axis in enumerate(axis_names):

@@ -24,6 +24,7 @@ from .architect import AntennaTopology, RFArchitectureAgent
 from .cost_guard import CostGuard
 from .datasets import FacultyDataset
 from .evidence import EvidenceDatabase, SearchCoverage
+from .fabrication import write_pifa_fabrication_proposal
 from .local_ai import confirm_prompt_family
 from .openems_backend import (
     OpenEMSProject,
@@ -538,7 +539,14 @@ def run_design(
                 selected_plan = OpenEMSProject.model_validate_json(
                     Path(selected_plan_path).read_text(encoding="utf-8")
                 )
+                if selected_plan.canonical_sha256 != selected_project_hash:
+                    chief.fail_task("task_simulation", "selected solver plan hash mismatch")
+                    workspace.close()
+                    raise RuntimeError("fabrication geometry does not match selected solver plan")
                 summary["dimensions_mm"] = pifa_dimensions(selected_plan)
+                artifacts.update(write_pifa_fabrication_proposal(
+                    selected_plan, root / "final" / "fabrication"
+                ))
             artifacts["simulation_result"] = str(workspace.save_artifact(
                 "simulation_result", ArtifactType.SIMULATION_RESULT,
                 summary, "openems_solver",
@@ -598,6 +606,7 @@ def run_design(
                 f"# openEMS antenna simulation\n\n"
                 f"- Family: {topology}\n"
                 f"- Solver: openEMS FDTD\n"
+                f"- Selected plan SHA-256: `{selected_project_hash}`\n"
                 f"- Solver runs: {simulation_count}\n"
                 f"- Frequency: {frequencies[center_index] / 1e9:.4f} GHz\n"
                 f"- S11: {center_s11:.2f} dB (target {requirements['target_s11_db']:.2f} dB)\n"
@@ -618,6 +627,11 @@ def run_design(
                     f"- Short wall width: {dims['short_wall_width_mm']:.2f} mm\n"
                     f"- Feed clearance from short wall: {dims['feed_clearance_from_short_wall_mm']:.2f} mm\n"
                     "- Conductors are ideal PEC sheets; copper thickness, connector, enclosure, and mounting are not modelled.\n"
+                    "- Geometry proposal: [manifest](fabrication/fabrication_proposal.json), "
+                    "[top view](fabrication/pifa_top_view.svg), "
+                    "[side view](fabrication/pifa_side_view.svg), "
+                    "[BOM](fabrication/bill_of_materials.csv).\n"
+                    "- Proposed tolerances are not EM-validated; these are not manufacturing-ready drawings.\n"
                 )
             artifacts["report"] = str(workspace.save_artifact(
                 "final_report", ArtifactType.REPORT,

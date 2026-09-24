@@ -61,6 +61,11 @@ the package can be regenerated from the winning immutable plan, key dimensions
 match that exact simulated geometry, and the report labels idealized versus
 fabrication/measurement unknowns. A physical claim remains **unverified**
 until a prototype is measured.
+**Current state:** the PIFA simulation path now writes plan-hash-linked
+millimetre top/side SVG views, geometry dimensions, a proposed BOM and
+explicitly unverified tolerances. These drawings represent ideal PEC geometry,
+not selected copper thickness, a physical feed connector or validated assembly;
+Goal 3 remains open until those choices and sensitivity checks are made.
 
 ## Goal 4 — Run it as a standalone local product
 

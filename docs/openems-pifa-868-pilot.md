@@ -65,6 +65,32 @@ The two-stage retune and failing check are saved under
 `D:\Prompt2CST-LocalAI\real-em\pifa-868-refined-search-v1\`. These results
 show why the final gate cannot be defined as "one solver run below −10 dB."
 
+## Experimental conductor-edge mesh (v3/v4)
+
+The [openEMS mesh guide](https://docs.openems.de/en/latest/concepts/mesh.html)
+recommends a 1/3-metal, 2/3-air cell at conductor edges rather than aligning
+all metal edges exactly to grid lines. Recipe v3 tested that treatment, but
+an offset radiator edge collided with the short-wall line and created a
+0.22 mm cell. The run reached only about −20 dB energy decay at the 30,000
+step cap, so **no RF result from v3 is accepted**.
+
+Recipe v4 keeps the shorted radiator x edge aligned while offsetting the
+other broad PIFA edges. The smallest generated cell is about 0.95 mm. The
+unchanged length-scale-1.4078 geometry finished the −40 dB solver criterion,
+and its 1.875×→2.344× mesh comparison passed the port criteria (ΔS11
+0.20 dB, ΔZ 4.65 Ω), but it was unmatched at 868 MHz.
+
+A v4 length-scale-1.4365, feed-0.10 search candidate reached S11 −12.27 dB
+at 868 MHz on the 1.875× mesh. Its 2.344× result remained matched at
+−13.20 dB, but **failed** the impedance-convergence test (ΔZ 13.56 Ω versus
+the 10 Ω limit). Continuing the *same* candidate to a 2.930× mesh gave
+S11 −13.17 dB and passed the adjacent 2.344×→2.930× port comparison
+(ΔS11 0.028 dB, ΔZ 6.88 Ω). This establishes only a local two-mesh
+comparison, not domain or far-field convergence. These experimental runs are under
+`D:\Prompt2CST-LocalAI\real-em\pifa-868-edge-mesh-v4-20260924\` and
+`D:\Prompt2CST-LocalAI\real-em\pifa-868-v4-search-v1\`. Further refinement
+and a domain check are still required before accepting the design.
+
 ## Remaining gates before a build claim
 
 1. Repeat far-field at another mesh density and compare gain, efficiency, and pattern.
