@@ -173,10 +173,11 @@ This is a delivery target, **not a claim that it is already complete**. The
 current openEMS path generates five families and can run real FDTD simulations;
 one 868 MHz PIFA candidate passed adjacent-mesh and larger-air-domain
 **port** comparisons, and a separate single-prompt 868 MHz run also reached
-that port gate without manual dimension retuning. The 915 MHz case,
-far-field convergence and physical prototype remain unverified.
-See the
-[dedicated goals and stop gates](docs/autonomous-antenna-goals.md) and the
+that port gate without manual dimension retuning. A separate 915 MHz prompt
+run has now passed the same **port-only** gate. Far-field convergence and a
+physical prototype remain unverified. See the
+[two-band one-prompt acceptance record](docs/pifa-one-prompt-acceptance.md),
+[dedicated goals and stop gates](docs/autonomous-antenna-goals.md), and the
 [pilot evidence](docs/openems-pifa-868-pilot.md). Families beyond PIFA are
 added only when each one passes the same validation standard.
 

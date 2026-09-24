@@ -229,14 +229,22 @@ def _local_design_summary(result: DesignRun) -> dict[str, str]:
     ])
     if result.mode == "openems-simulate":
         measured = json.loads(Path(result.artifacts["simulation_result"]).read_text(encoding="utf-8"))
+        impedance_sign = "+" if measured["z_imag_ohm"] >= 0 else "−"
         lines.extend([
             "", "## Simulated by openEMS FDTD", "",
             f"- S11 at target: {measured['s11_db']:.2f} dB",
-            f"- Input impedance: {measured['z_real_ohm']:.2f} + j{measured['z_imag_ohm']:.2f} Ω",
+            f"- Input impedance: {measured['z_real_ohm']:.2f} {impedance_sign} j{abs(measured['z_imag_ohm']):.2f} Ω",
             f"- S11 threshold at this mesh: {'Yes' if measured['target_met'] else 'No'}",
             f"- Mesh convergence: {measured['mesh_convergence']}",
+            f"- Air-domain convergence: {measured['domain_convergence']}",
+            f"- Simulated port verdict: **{measured['port_verdict']}** (not a hardware-performance claim)",
             f"- Full sweep: `{measured['raw_results']}`",
         ])
+        if "fabrication_proposal" in result.artifacts:
+            lines.append(
+                f"- Geometry/BOM proposal: `{result.artifacts['fabrication_proposal']}` "
+                "(ideal conductors and feed; not manufacturing-validated)"
+            )
     activity = "\n".join([
         "Architecture: autonomous local engine",
         "Cost: zero remote API calls",

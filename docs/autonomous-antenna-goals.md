@@ -23,8 +23,8 @@ offline suite, compilation, package/dependency checks, and UI lint pass; the
 pilot report identifies which numbers came from actual openEMS output and
 which checks remain outstanding. **Current state:** partially complete; the
 868 MHz pilot exists. A later matched candidate passed an adjacent-mesh and
-larger-box comparison for **port S11 and impedance**, but no far-field or
-915 MHz check has passed; that is progress, not completion.
+larger-box comparison for **port S11 and impedance**, but no far-field check
+has passed; that is progress, not physical validation.
 
 ## Goal 1 — Make one PIFA solve numerically credible
 
@@ -36,9 +36,10 @@ openEMS runs at both 868 and 915 MHz meet their requested S11 targets and
 the comparisons pass, or the app records a clear non-passing outcome. Neither
 a single mesh nor a single NF2FF run qualifies. The original PIFA pilot air-box
 clearance was only about 40 mm in places, so that earlier 868 MHz result is
-provisional until this gate is met. **Current state:** one 868 MHz v4 candidate
-passed the port mesh/domain checks; its far field, 915 MHz counterpart and
-autonomous end-to-end selection remain unverified.
+provisional until this gate is met. **Current state:** independent 868 and
+915 MHz one-prompt runs passed the programmed S11, port mesh and air-domain
+checks. Far-field convergence is not yet implemented or verified; this goal
+remains open.
 
 ## Goal 2 — Close the optimization loop
 
@@ -53,8 +54,9 @@ The existing coarse PIFA search is a starting point, not completion of this
 goal. **Current state:** automatic post-mesh retuning is implemented and
 offline-tested. A fresh 868 MHz one-prompt run automatically found a matched
 candidate and passed its port mesh/domain comparisons in five real solves.
-The 915 MHz case, domain-failure recovery, interruption/resume and broader
-acceptance gate are still open.
+An independent 915 MHz one-prompt run now passed the same port checks.
+Domain-failure recovery, interruption/resume and far-field acceptance remain
+open.
 
 ## Goal 3 — Produce a buildable *proposal*, not a fake certificate
 

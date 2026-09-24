@@ -79,13 +79,17 @@ class DesignRun:
     selected_topology: str
     artifacts: dict[str, str]
     simulation_count: int
+    port_verdict: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "project_dir": str(self.project_dir), "status": self.status,
             "mode": self.mode, "selected_topology": self.selected_topology,
             "artifacts": self.artifacts, "simulation_count": self.simulation_count,
         }
+        if self.port_verdict is not None:
+            result["port_verdict"] = self.port_verdict
+        return result
 
 
 def load_spec(path: str | Path) -> dict[str, Any]:
@@ -620,6 +624,7 @@ def run_design(
             ))
             chief.complete_task("task_validation")
             chief.start_task("task_report")
+            impedance_sign = "+" if summary["z_imag_ohm"] >= 0 else "−"
             report_text = (
                 f"# openEMS antenna simulation\n\n"
                 f"- Family: {topology}\n"
@@ -628,7 +633,8 @@ def run_design(
                 f"- Solver runs: {simulation_count}\n"
                 f"- Frequency: {frequencies[center_index] / 1e9:.4f} GHz\n"
                 f"- S11: {center_s11:.2f} dB (target {requirements['target_s11_db']:.2f} dB)\n"
-                f"- Impedance: {summary['z_real_ohm']:.2f} + j{summary['z_imag_ohm']:.2f} ohm\n"
+                f"- Impedance: {summary['z_real_ohm']:.2f} {impedance_sign} "
+                f"j{abs(summary['z_imag_ohm']):.2f} ohm\n"
                 f"- Target met: {'yes' if target_met else 'no'}\n\n"
                 f"- Simulated port verdict: **{summary['port_verdict']}** "
                 "(S11, impedance, mesh and air-domain checks only)\n"
@@ -661,7 +667,10 @@ def run_design(
             chief.complete_task("task_report")
             workspace.set_meta("stage", "openems_simulated")
             workspace.close()
-            return DesignRun(root, "openems_simulated", mode, topology, artifacts, simulation_count)
+            return DesignRun(
+                root, "openems_simulated", mode, topology, artifacts,
+                simulation_count, port_verdict=summary["port_verdict"],
+            )
         status = backend_status()
         validation = {
             "valid": True,

@@ -181,6 +181,7 @@ class AutonomousWorkflowTests(unittest.TestCase):
             solver.assert_called_once()
             self.assertEqual(result.status, "openems_simulated")
             self.assertEqual(result.simulation_count, 1)
+            self.assertEqual(result.to_dict()["port_verdict"], "FAIL")
             validation = json.loads(Path(result.artifacts["validation"]).read_text(encoding="utf-8"))
             self.assertEqual(validation["status"], "TARGET_UNMET")
             self.assertEqual(validation["port_verdict"], "FAIL")
@@ -256,6 +257,7 @@ class AutonomousWorkflowTests(unittest.TestCase):
             validation = json.loads(Path(result.artifacts["validation"]).read_text(encoding="utf-8"))
             self.assertEqual(validation["status"], "TARGET_MET_MESH_CONVERGED")
             self.assertEqual(validation["port_verdict"], "INCONCLUSIVE")
+            self.assertEqual(result.to_dict()["port_verdict"], "INCONCLUSIVE")
 
     def test_openems_simulate_retries_nonconverged_mesh_within_budget(self):
         frequencies = [2.2e9 + i * 1e6 for i in range(501)]

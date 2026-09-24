@@ -4,6 +4,15 @@ All notable Prompt2CST changes are documented here.
 
 ## Unreleased
 
+- A separate fresh 915 MHz one-prompt PIFA run also automatically found a
+  matched candidate and passed the -10 dB S11, adjacent-mesh and enlarged
+  air-domain port checks in five real openEMS solves. Both bands are recorded
+  in `docs/pifa-one-prompt-acceptance.md`; far-field and hardware gates remain.
+
+- The desktop result view now surfaces domain convergence, the scoped port
+  verdict and the exact geometry/BOM proposal path alongside S11; the CLI
+  result JSON also carries the verdict when a solver run completes.
+
 - A fresh, single-prompt 868 MHz PIFA run automatically selected its length,
   ran five real openEMS solves, and passed the -10 dB S11, adjacent-mesh and
   enlarged-air-domain port checks. This is not far-field or hardware proof.

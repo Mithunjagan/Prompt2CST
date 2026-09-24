@@ -103,6 +103,8 @@ class ControllerStateTests(unittest.TestCase):
             self.assertEqual(failed, [])
             self.assertIn("S11 threshold at this mesh: No", completed[0]["assistant_text"])
             self.assertIn("openEMS FDTD completed", completed[0]["assistant_text"])
+            self.assertIn("Simulated port verdict: **FAIL**", completed[0]["assistant_text"])
+            self.assertIn("Air-domain convergence: NOT_RUN", completed[0]["assistant_text"])
 
     def test_clear_invalidates_pending_preview_before_removing_session(self):
         with tempfile.TemporaryDirectory() as directory:
