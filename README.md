@@ -5,12 +5,12 @@
 <h1 align="center">Prompt2CST</h1>
 
 <p align="center">
-  <strong>Describe an antenna. Inspect the engineering. Approve the exact CST write.</strong>
+  <strong>Describe an antenna. Simulate locally. Review before any CST write.</strong>
 </p>
 
 <p align="center">
-  A safety-first RF design workspace that turns natural-language intent into
-  typed, reviewable CST Studio Suite 2026 geometry.
+  A local-first RF design workspace with openEMS simulation and optional,
+  approval-gated CST Studio Suite 2026 geometry.
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.5.0b1-6c63ff" alt="Version 0.5.0 beta 1"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.11-3776ab?logo=python&amp;logoColor=white" alt="Python 3.11"></a>
   <a href="#platform-support"><img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?logo=windows" alt="Windows 10 and 11"></a>
-  <a href="#verification"><img src="https://img.shields.io/badge/tests-200%20passing-22c55e" alt="200 tests passing"></a>
+  <a href="#verification"><img src="https://img.shields.io/badge/tests-offline%20suite-22c55e" alt="Offline test suite"></a>
 </p>
 
 <p align="center">
@@ -58,7 +58,7 @@ remain separate costs if those paths are used.
   <strong>25 typed tools</strong> ·
   <strong>6 protected write tools</strong> ·
   <strong>10 antenna topologies</strong> ·
-  <strong>200 unit tests</strong> ·
+  <strong>Offline regression suite</strong> ·
   <strong>$0 API cost verified</strong>
 </p>
 
@@ -238,16 +238,21 @@ extension can add it.
 
 ## Platform support
 
-| Platform | Desktop UI | Preview/calculation | CST build | Support status |
+| Platform | Desktop UI and local planning | openEMS simulation | CST build | Verification status |
 |---|---:|---:|---:|---|
-| Windows 11 x64 | Yes | Yes | Yes, with CST 2026 | Supported |
-| Windows 10 x64 | Yes | Yes | Yes, with CST 2026 | Supported |
-| Linux | Not supported by supplied setup | Python logic may be reusable manually | No COM automation | Unsupported |
-| macOS | Not supported by supplied setup | Python logic may be reusable manually | No COM automation | Unsupported |
+| Windows 11 x64 | Yes | Yes, with native solver/bindings | Yes, with CST 2026 | Locally tested |
+| Windows 10 x64 | Yes | Requires compatible native solver/bindings | Yes, with CST 2026 | Setup supplied; not live-tested here |
+| Linux | `setup.sh` / `launch.sh` supplied | Requires native solver/bindings | No COM automation | App path added; not live-tested here |
+| macOS | `setup.sh` / `launch.sh` supplied | Requires native solver/bindings | No COM automation | App path added; not live-tested here |
 
-This repository does **not** run fully on every operating system. A complete
-GUI-to-CST workflow requires Windows because CST automation uses
+This repository does **not** run fully on every operating system. The app and
+its local planning path can be installed on Windows, Linux or macOS with Python
+3.11; real openEMS simulation additionally requires a compatible native
+installation on that platform. A complete GUI-to-CST workflow requires Windows because CST automation uses
 `CSTStudio.Application.2026` through Windows COM and `pywin32`.
+Run `python -m prompt2cst doctor` in the virtual environment to see exactly
+which modes are available. See [platform setup notes](docs/platform-setup.md).
+An installed `prompt2cst` command is also provided inside `.venv`.
 
 The repository can be cloned to any directory and no longer assumes a `D:`
 drive. In an editable checkout, generated CST projects default to the
@@ -255,17 +260,17 @@ repository’s local `outputs` directory.
 
 ## Prerequisites
 
-### Required for setup and GUI preview
+### Required for setup and GUI planning
 
 | Requirement | Details |
 |---|---|
-| Operating system | Windows 10 or Windows 11, 64-bit |
-| Python | CPython 3.11 x64; Python 3.12+ is not accepted by this release |
+| Operating system | Windows 10/11, Linux, or macOS; Windows is the locally tested desktop target |
+| Python | CPython 3.11; Python 3.12+ is not accepted by this release |
 | Internet | Required during dependency installation; not required by an installed local openEMS workflow |
 | OpenRouter account | Optional for hosted-model planning; not required for local openEMS design/simulation |
 | Structured/tool model | Optional hosted planning roles should support structured JSON; the local solver path does not need one |
 | Disk space | Allow approximately 1 GB for the app, at least 2 GB free for port simulation or 8 GB for far-field recording |
-| PowerShell | Windows PowerShell 5.1 or PowerShell 7 |
+| Setup shell | PowerShell on Windows; Bash on Linux/macOS |
 
 ### Additionally required for CST builds
 
@@ -306,9 +311,16 @@ Open a **new** PowerShell window, then verify both bindings and the backend:
 ```
 
 The second command must report `READY` before `openems-simulate` can run.
+The more thorough `doctor` command additionally checks that the native Python
+bindings can actually import; use it before opening the desktop app.
 openEMS's Windows package can have version-specific performance issues, so
 solver completion and convergence—not installation alone—determine whether
 an antenna result is accepted.
+
+On Linux and macOS, use [platform setup notes](docs/platform-setup.md) and
+the [official openEMS installation guide](https://docs.openems.de/en/latest/install/index.html)
+for native solver/binding installation. In particular, the app setup script
+does not silently install or claim a working native solver.
 
 Useful official starting points:
 
@@ -338,7 +350,7 @@ directory. Avoid read-only locations.
 
 ### 2. Run setup
 
-Double-click:
+On Windows, double-click:
 
 ```text
 setup.bat
@@ -356,9 +368,18 @@ Optional desktop shortcut:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -CreateDesktopShortcut
 ```
 
+On Linux/macOS, from a terminal in the extracted repository:
+
+```bash
+./setup.sh
+```
+
+The setup scripts install the Python app. Install native openEMS separately
+when you need real FDTD, then run `doctor` again.
+
 ### 3. Launch Prompt2CST
 
-Double-click:
+On Windows, double-click:
 
 ```text
 Prompt2CST.bat
@@ -370,13 +391,22 @@ Or run:
 .\launch.ps1
 ```
 
-### 4. Enter an OpenRouter key
+On Linux/macOS, run `./launch.sh`. The app shows solver readiness at the
+bottom of the design composer; **Check setup** shows actionable details.
 
-Enter the key into the in-app **OpenRouter key** field. The desktop application
-keeps it in process memory for the current session and does not save it to a
-file.
+### 4. Choose a workflow
 
-### 5. Preview before building
+For a free local plan, enter a prompt and choose **Plan antenna · no key**.
+To create openEMS geometry without solving, choose **Generate openEMS geometry**.
+When the setup check reports a ready solver, choose **Design + simulate · free
+openEMS**. Those local actions infer the family from the prompt; the separate
+family/phase controls apply to the CST preview flow.
+
+### 5. Optional hosted planning and CST
+
+Only for the hosted planning path, enter an OpenRouter key into the in-app
+field. The desktop application keeps it in process memory for the current
+session and does not save it to a file.
 
 Choose a family, enter the antenna requirements, and select **Preview design**.
 Only select **Build in CST** after reviewing the calculated design and activity
@@ -398,13 +428,17 @@ steps:
 4. Upgrades `pip`, `setuptools`, and `wheel`.
 5. Installs Prompt2CST in editable mode with all declared dependencies.
 6. Runs the complete offline unit-test suite.
-7. Checks whether `CSTStudio.Application.2026` exists in the Windows registry.
+7. Runs `doctor` to report solver imports and CST registration without starting either.
 8. Creates the repository-local `outputs` directory.
 9. Optionally creates a desktop shortcut.
 
 The setup now stops immediately if virtual-environment creation, package
 installation, or tests fail. It does not print a false “Setup complete”
 message after a failed native command.
+On Linux/macOS, `setup.sh` creates the same Python 3.11 environment, installs
+the app, creates `outputs`, and runs `doctor`; it does not run the full test
+suite or install native openEMS. Use `./.venv/bin/python -m unittest discover -s tests -v`
+for the offline suite there.
 
 Re-running setup is supported. If the existing `.venv` was created with the
 wrong Python version, remove only `.venv` and run `setup.bat` again:
@@ -434,6 +468,10 @@ Equivalent commands:
 .\.venv\Scripts\python.exe -m prompt2cst.gui
 .\.venv\Scripts\prompt2cst-gui.exe
 ```
+
+Linux/macOS: `./launch.sh`, or `./.venv/bin/python -m prompt2cst.gui`.
+After setup on any platform, run the readiness check from that platform's
+virtual environment: `python -m prompt2cst doctor`.
 
 ### Standalone MCP server
 
@@ -473,7 +511,7 @@ without Codex, ChatGPT, OpenRouter, or another hosted model:
 
 1. Enter the antenna request in **Requirements**.
 2. Optionally choose a parameterized S11 ZIP with **Dataset**.
-3. Select **Autonomous Local · No API key**.
+3. Select **Plan antenna · no key**.
 4. Review the selected topology, target band, dataset suitability, execution
    readiness, validation boundary, and saved project path under **Assistant**.
 5. Inspect every immutable artifact path under **Activity**.
@@ -522,13 +560,13 @@ and impedance differences. Passing a domain check does not by itself mean the
 antenna meets its target or that its far-field pattern is validated.
 
 The same path is available through \`design ... --mode openems\` and the
-desktop **Generate openEMS · Free local solver** action. Generation never
+desktop **Generate openEMS geometry** action. Generation never
 pretends a simulation ran. Real S11 and impedance require compatible openEMS
 and CSXCAD Python bindings on the machine and a successfully completed FDTD run.
 
 To generate and run from a prompt in one command, use
 `python -m prompt2cst design "Design a 2.45 GHz PIFA with S11 < -10 dB" --mode openems-simulate --project-dir D:\antenna-project`.
-The desktop **Design + simulate · openEMS** action does the same in a background
+The desktop **Design + simulate · free openEMS** action does the same in a background
 worker. For PIFA, a missed target triggers a bounded length/feed search with
 real solver runs. If a matching candidate leaves run budget, the app compares
 successively finer meshes until the result converges or the mesh/budget limit

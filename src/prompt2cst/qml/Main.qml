@@ -35,7 +35,16 @@ ApplicationWindow {
     property string infoText: ""
     property string datasetUrl: ""
 
+    Component.onCompleted: root.backend.refreshReadiness()
     onClosing: root.backend.cancelPendingApproval()
+
+    Connections {
+        target: root.backend
+        function onReadinessChanged() {
+            if (infoDialog.visible && root.infoTitle === "Local setup")
+                root.infoText = root.backend.readinessText;
+        }
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -362,7 +371,7 @@ ApplicationWindow {
                             }
                         }
                         Text {
-                            text: "20 typed MCP tools"
+                            text: "Typed, guarded MCP tools"
                             color: root.ink
                             font.pixelSize: 14
                             font.weight: Font.DemiBold
@@ -388,7 +397,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                     }
                     Text {
-                        text: "CST 2026"
+                        text: "CST 2026 · Windows"
                         color: root.cyan
                         font.pixelSize: 11
                     }
@@ -672,10 +681,17 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     edgeColor: Qt.rgba(0.33, 0.80, 0.98, 0.24)
 
-                    ColumnLayout {
+                    ScrollView {
+                        id: composerScroll
+                        objectName: "composerScroll"
                         anchors.fill: parent
                         anchors.margins: root.compactHeight ? 16 : 22
-                        spacing: root.compactHeight ? 9 : 14
+                        clip: true
+                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                        ColumnLayout {
+                            width: composerScroll.availableWidth
+                            spacing: root.compactHeight ? 9 : 14
 
                         RowLayout {
                             Layout.fillWidth: true
@@ -884,8 +900,7 @@ ApplicationWindow {
                         TextArea {
                             id: promptArea
                             Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            Layout.minimumHeight: root.compactHeight ? 108 : 210
+                            Layout.preferredHeight: root.compactHeight ? 150 : 210
                             color: root.ink
                             placeholderText:
                             "Describe frequency, geometry, material, feed, sweep and monitors…"
@@ -931,7 +946,7 @@ ApplicationWindow {
                                 }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "Local Autopilot needs no API key. Every CST write still requires approval."
+                                    text: "Local planning needs no key. CST writes remain separate and require approval."
                                     color: "#A8C9CA"
                                     font.pixelSize: 10
                                     wrapMode: Text.WordWrap
@@ -986,10 +1001,51 @@ ApplicationWindow {
                             ToolTip.visible: hovered
                             ToolTip.text: "Advisory only. Frequency, topology support, geometry and RF results remain deterministic."
                         }
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: 62
+                            radius: 15
+                            color: Qt.rgba(0.05, 0.16, 0.21, 0.64)
+                            border.width: 1
+                            border.color: root.backend.solverReady ? "#3C8E80" : "#8C6647"
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 8
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+                                    Text {
+                                        text: "LOCAL WORKFLOW"
+                                        color: root.cyan
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.backend.readinessSummary
+                                        color: root.ink
+                                        font.pixelSize: 11
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+                                LiquidButton {
+                                    implicitWidth: 92
+                                    implicitHeight: 38
+                                    text: "Check setup"
+                                    onClicked: {
+                                        root.infoTitle = "Local setup";
+                                        root.infoText = root.backend.readinessText;
+                                        infoDialog.open();
+                                        root.backend.refreshReadiness();
+                                    }
+                                }
+                            }
+                        }
                         LiquidButton {
                             Layout.fillWidth: true
                             Layout.preferredHeight: root.compactHeight ? 46 : 52
-                            text: "Autonomous Local · No API key"
+                            text: "Plan antenna · no key"
                             iconText: "✦"
                             variant: "primary"
                             enabled: !root.backend.busy
@@ -1007,7 +1063,7 @@ ApplicationWindow {
                         LiquidButton {
                             Layout.fillWidth: true
                             Layout.preferredHeight: root.compactHeight ? 46 : 52
-                            text: "Generate openEMS · Free local solver"
+                            text: "Generate openEMS geometry"
                             iconText: "⌁"
                             variant: "build"
                             enabled: !root.backend.busy
@@ -1020,15 +1076,23 @@ ApplicationWindow {
                         LiquidButton {
                             Layout.fillWidth: true
                             Layout.preferredHeight: root.compactHeight ? 46 : 52
-                            text: "Design + simulate · openEMS"
+                            text: "Design + simulate · free openEMS"
                             iconText: "⌁"
                             variant: "primary"
-                            enabled: !root.backend.busy
+                            enabled: !root.backend.busy && root.backend.solverReady
                             onClicked: {
                                 root.activeReviewTab = 0;
                                 root.backend.runLocalOpenEMSSimulate(promptArea.text,
                                                                      root.datasetUrl);
                             }
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Family and phase above apply to CST preview. Local actions infer the antenna from your prompt."
+                            color: root.muted
+                            font.pixelSize: 10
+                            wrapMode: Text.WordWrap
+                        }
                         }
                     }
                 }

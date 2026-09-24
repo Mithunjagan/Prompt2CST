@@ -19,3 +19,25 @@ jobs:
           python -m pip install -e .
       - name: Test
         run: python -m unittest discover -s tests -v
+
+  portable-app:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install with platform setup script
+        run: bash ./setup.sh
+      - name: Check local modes and portable workflow tests
+        run: |
+          ./.venv/bin/python -m prompt2cst doctor --json
+          ./.venv/bin/python -m unittest discover -s tests -p test_readiness.py -v
+          ./.venv/bin/python -m unittest discover -s tests -p test_autonomous_cli.py -v
+          ./.venv/bin/python -m unittest discover -s tests -p test_gui_controller.py -v

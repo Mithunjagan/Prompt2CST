@@ -4,6 +4,12 @@ All notable Prompt2CST changes are documented here.
 
 ## Unreleased
 
+- Added Linux/macOS Python app setup and launch scripts, plus a `doctor`
+  command that checks local planning, native openEMS imports and Windows CST
+  registration without claiming a solver run or licence check. The desktop
+  now shows that readiness, explains the local modes, disables simulation
+  until its native backend is ready, and scrolls the composer on small windows.
+
 - A separate fresh 915 MHz one-prompt PIFA run also automatically found a
   matched candidate and passed the -10 dB S11, adjacent-mesh and enlarged
   air-domain port checks in five real openEMS solves. Both bands are recorded

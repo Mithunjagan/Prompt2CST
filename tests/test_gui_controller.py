@@ -19,6 +19,30 @@ from prompt2cst.workflow import WorkflowState
 
 @unittest.skipUnless(PYSIDE6_AVAILABLE, "PySide6 is not installed")
 class ControllerStateTests(unittest.TestCase):
+    def test_readiness_is_explicit_about_solver_and_cst_boundaries(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"PROMPT2CST_STATE_DIR": directory}, clear=False
+        ):
+            controller = Prompt2CSTController()
+            self.assertFalse(controller.solverReady)
+            self.assertIn("Checking", controller.readinessSummary)
+            controller._readiness_completed({
+                "platform": "Linux",
+                "python": "3.11.9",
+                "output_dir": directory,
+                "modes": {
+                    "plan": True,
+                    "openems_generate": True,
+                    "openems_simulate": False,
+                },
+                "openems": {"issue": ""},
+                "cst": {"status": "UNAVAILABLE"},
+                "next_steps": ["Install openEMS bindings."],
+            })
+            self.assertFalse(controller.solverReady)
+            self.assertIn("needs setup", controller.readinessSummary)
+            self.assertIn("Install openEMS bindings", controller.readinessText)
+
     def test_local_worker_can_opt_into_guarded_ollama_check(self):
         with tempfile.TemporaryDirectory() as directory:
             worker = LocalDesignWorker(

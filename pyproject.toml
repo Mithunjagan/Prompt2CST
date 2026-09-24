@@ -38,6 +38,7 @@ dependencies = [
 ]
 
 [project.scripts]
+prompt2cst = "prompt2cst.cli:main"
 prompt2cst-mcp = "prompt2cst.server:main"
 prompt2cst-gui = "prompt2cst.gui:main"
 

@@ -41,6 +41,7 @@ from .optimizer.schema import OptimizationGoalConfig, ParameterBound
 from .orchestrator import ChiefOrchestrator
 from .papers import PaperIngestionEngine
 from .reports import generate_optimization_report, save_report
+from .readiness import format_readiness, readiness_report
 from .wearable import WearableAntennaEvaluator
 
 
@@ -112,6 +113,12 @@ def create_parser() -> argparse.ArgumentParser:
 
     # capabilities
     subparsers.add_parser("capabilities", help="List CST 2026 compiler capabilities")
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Check local planning, openEMS and CST readiness"
+    )
+    doctor_parser.add_argument(
+        "--json", action="store_true", help="Print machine-readable diagnostics"
+    )
     knowledge_parser = subparsers.add_parser(
         "antenna-knowledge",
         help="List the cited local antenna-family engineering catalogue",
@@ -243,6 +250,11 @@ def main(args: list[str] | None = None) -> int:
     if parsed.command == "capabilities":
         caps = capability_browser()
         print(json.dumps(caps, indent=2))
+        return 0
+
+    if parsed.command == "doctor":
+        report = readiness_report()
+        print(json.dumps(report, indent=2) if parsed.json else format_readiness(report))
         return 0
 
     if parsed.command == "antenna-knowledge":

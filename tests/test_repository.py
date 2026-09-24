@@ -30,6 +30,13 @@ class RepositoryReleaseTests(unittest.TestCase):
         self.assertTrue((ROOT / "src/prompt2cst/qml/ChevronIndicator.qml").is_file())
         self.assertTrue((ROOT / "src/prompt2cst/assets/prompt2cst.svg").is_file())
 
+    def test_installed_cli_entry_point_exists(self) -> None:
+        project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+        self.assertEqual(
+            project["project"]["scripts"]["prompt2cst"],
+            "prompt2cst.cli:main",
+        )
+
     def test_double_click_setup_and_launch_exist(self) -> None:
         for name in (
             "setup.bat",
@@ -37,6 +44,10 @@ class RepositoryReleaseTests(unittest.TestCase):
             "Prompt2CST.bat",
             "launch.ps1",
         ):
+            self.assertTrue((ROOT / name).is_file(), name)
+
+    def test_unix_setup_and_launch_exist(self) -> None:
+        for name in ("setup.sh", "launch.sh"):
             self.assertTrue((ROOT / name).is_file(), name)
 
     def test_editable_checkout_uses_local_output_directory(self) -> None:

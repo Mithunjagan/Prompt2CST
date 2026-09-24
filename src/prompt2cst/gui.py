@@ -35,6 +35,7 @@ from .orchestration import (
     role_configs_from_environment,
 )
 from .plan_service import PlanService
+from .readiness import format_readiness, readiness_report
 from .session_history import PromptHistoryStore
 from .swarm import SwarmCoordinator, SwarmRunResult, SwarmSessionStore
 from .ui_logic import (
@@ -134,6 +135,18 @@ class ModelWorker(QObject):
             self.completed.emit(models)
         except Exception as exc:
             self.failed.emit(format_exception_details(exc))
+
+
+class ReadinessWorker(QObject):
+    completed = Signal(object)
+    failed = Signal(str)
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            self.completed.emit(readiness_report())
+        except Exception as exc:
+            self.failed.emit(f"Setup check failed: {type(exc).__name__}")
 
 
 class LocalDesignWorker(QObject):
@@ -293,6 +306,7 @@ class Prompt2CSTController(QObject):
     promptHistoryChanged = Signal()
     canBuildChanged = Signal()
     modelSettingsChanged = Signal()
+    readinessChanged = Signal()
     approvalRequested = Signal(str, str, str)
     promptRestored = Signal(str, str, str)
     showError = Signal(str)
@@ -319,6 +333,10 @@ class Prompt2CSTController(QObject):
         self._agent_worker: AgentWorker | None = None
         self._model_thread: QThread | None = None
         self._model_worker: ModelWorker | None = None
+        self._readiness_thread: QThread | None = None
+        self._readiness_worker: ReadinessWorker | None = None
+        self._readiness: dict[str, Any] | None = None
+        self._readiness_error = ""
         self._local_thread: QThread | None = None
         self._local_worker: LocalDesignWorker | None = None
         self._role_configs = role_configs_from_environment(self._models[0])
@@ -391,6 +409,32 @@ class Prompt2CSTController(QObject):
     def status(self) -> str:
         return self._status
 
+    @Property(str, notify=readinessChanged)
+    def readinessSummary(self) -> str:
+        if self._readiness is None:
+            return self._readiness_error or "Checking local solver setup…"
+        return (
+            "openEMS ready · simulate locally"
+            if self.solverReady
+            else "openEMS needs setup · planning still works"
+        )
+
+    @Property(str, notify=readinessChanged)
+    def readinessText(self) -> str:
+        return (
+            format_readiness(self._readiness)
+            if self._readiness is not None
+            else self._readiness_error
+            or "Setup check is running. Try Check setup again in a moment."
+        )
+
+    @Property(bool, notify=readinessChanged)
+    def solverReady(self) -> bool:
+        return bool(
+            self._readiness is not None
+            and self._readiness["modes"]["openems_simulate"]
+        )
+
     @Property(str, notify=assistantTextChanged)
     def assistantText(self) -> str:
         return self._assistant_text
@@ -456,6 +500,52 @@ class Prompt2CSTController(QObject):
     @Slot(str, result=str)
     def familyExample(self, family_id: str) -> str:
         return EXAMPLE_PROMPTS.get(family_id, EXAMPLE_PROMPTS["auto"])
+
+    @Slot()
+    def refreshReadiness(self) -> None:
+        if self._readiness_thread is not None:
+            return
+        self._readiness = None
+        self._readiness_error = ""
+        self.readinessChanged.emit()
+        worker = ReadinessWorker()
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.completed.connect(self._readiness_completed)
+        worker.failed.connect(self._readiness_failed)
+        worker.completed.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._clear_readiness_thread)
+        self._readiness_worker = worker
+        self._readiness_thread = thread
+        thread.start()
+
+    @Slot(object)
+    def _readiness_completed(self, report: dict[str, Any]) -> None:
+        self._readiness = report
+        self._readiness_error = ""
+        self.readinessChanged.emit()
+
+    @Slot(str)
+    def _readiness_failed(self, error: str) -> None:
+        self._readiness = None
+        self._readiness_error = error + ". Run `prompt2cst doctor` for details."
+        self.readinessChanged.emit()
+        self.showError.emit(error)
+
+    @Slot()
+    def _clear_readiness_thread(self) -> None:
+        self._readiness_worker = None
+        self._readiness_thread = None
+
+    @Slot()
+    def stopReadinessCheck(self) -> None:
+        if self._readiness_thread is not None:
+            self._readiness_thread.quit()
+            self._readiness_thread.wait(16000)
 
     @Slot(str, str)
     def runLocalAutonomous(self, prompt: str, dataset_url: str) -> None:
@@ -1058,6 +1148,7 @@ def main() -> None:
     window = engine.rootObjects()[0]
     QTimer.singleShot(100, lambda: _enable_windows_backdrop(window))
     app.aboutToQuit.connect(controller.cancelPendingApproval)
+    app.aboutToQuit.connect(controller.stopReadinessCheck)
     raise SystemExit(app.exec())
 
 

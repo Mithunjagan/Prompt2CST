@@ -139,24 +139,9 @@ Write-Host "[4/5] Running offline safety and geometry tests..."
 & $venvPython -m unittest discover -s (Join-Path $projectRoot "tests") -v
 Assert-NativeSuccess "Prompt2CST test suite"
 
-Write-Host "[5/5] Checking the CST 2026 registration..."
-$cstRegistered = Test-Path `
-    "Registry::HKEY_CLASSES_ROOT\CSTStudio.Application.2026"
-if ($cstRegistered) {
-    Write-Host "CSTStudio.Application.2026 is registered." -ForegroundColor Green
-}
-else {
-    Write-Warning "CSTStudio.Application.2026 was not found. The UI can run, but CST builds will not work until CST 2026 is installed and registered."
-}
-
-$solverStatus = & $venvPython -c `
-    "from prompt2cst.openems_backend import backend_status; print(backend_status()['status'])"
-if ($LASTEXITCODE -eq 0 -and $solverStatus.Trim() -eq "READY") {
-    Write-Host "Free local openEMS solver is ready." -ForegroundColor Green
-}
-else {
-    Write-Warning "Free local openEMS solver is not ready. Install compatible openEMS/CSXCAD wheels and native binaries using the README instructions."
-}
+Write-Host "[5/5] Checking local workflow readiness..."
+& $venvPython -m prompt2cst doctor
+Assert-NativeSuccess "Prompt2CST readiness check"
 
 New-Item -ItemType Directory -Force `
     (Join-Path $projectRoot "outputs") | Out-Null
